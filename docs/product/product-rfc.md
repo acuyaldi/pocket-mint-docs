@@ -155,9 +155,27 @@ Debt classification is derived by application logic.
 
 ## Net Worth
 
+Pocket Mint Net Worth is calculated from financial records tracked by
+Pocket Mint at the same reporting cutoff.
+
 Net Worth
 
-= Assets − Debts
+= Total Assets − Total Outstanding Debt
+
+Total Assets is the combined balance of all asset wallets tracked by
+Pocket Mint.
+
+Total Outstanding Debt is the combined outstanding amount of all debt
+wallets tracked by Pocket Mint.
+
+Rules:
+
+- An installment obligation already represented in a debt wallet's
+  outstanding balance must not be deducted again.
+- An assets-only value must be labeled Total Assets and must not be
+  presented as Net Worth.
+- Net Worth may be negative.
+- Net Worth represents only assets and debts tracked by Pocket Mint.
 
 ---
 
