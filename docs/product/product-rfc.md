@@ -252,14 +252,20 @@ General rules:
 
 # Authentication
 
-Pocket Mint uses Owner-first authentication.
+Pocket Mint uses First Owner with Controlled Access.
 
 Rules:
 
-- No public registration
-- Single owner by default
-- Multi-user supported by schema
-- Every request requires authenticated ownership
+- An uninitialized installation permits a narrowly scoped first-Owner initialization journey. The first account to complete initialization becomes the installation's single active Owner.
+- Public self-registration is prohibited after initialization.
+- Additional Users require explicit Owner approval through an invitation or allowlist before admission.
+- Every User owns isolated financial resources, and every financial operation is scoped to the requesting User.
+- Owner authority is installation-level. It governs admission and installation settings but does not permit access to another User's financial resources.
+- Non-financial landing content, first-Owner initialization while uninitialized, authentication, approved authentication callbacks, invitation or allowlist admission completion, account recovery, and minimal health capabilities may remain public.
+- Public capabilities must not expose private financial information or disclose another User's account, invitation, or resource existence.
+- Every user-financial capability requires an authenticated identity and Backend-enforced User ownership.
+- Account recovery restores the requesting User's own access. Owner replacement transfers installation authority only and does not transfer or expose financial resources.
+- Automation and service access require explicit authorization and narrowly defined User scope through the same Backend authorization boundary as interactive access.
 
 ---
 

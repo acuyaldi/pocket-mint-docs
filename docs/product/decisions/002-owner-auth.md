@@ -3,7 +3,7 @@ id: PD-002
 decision_number: 002
 title: Owner-First Access Policy
 version: 1.0
-status: Draft
+status: Approved
 priority: P0
 owner: Product
 created: 2026-07-14
@@ -54,7 +54,7 @@ Financial APIs require verified identities, but the frontend offers email signup
 
 ## Current Documentation
 
-The Product RFC states no public registration, single owner by default, schema support for multiple users, and authentication for every request.
+Before approval, the Product RFC stated no public registration, single owner by default, schema support for multiple Users, and authentication for every request. This decision resolves the public exceptions and access boundaries that wording left ambiguous.
 
 ## Current User Impact
 
@@ -71,7 +71,7 @@ Allow initial owner setup, then permit additional accounts only through an owner
 Pros
 
 - Matches the privacy-first, owner-first proposition.
-- Supports optional future multi-user use without public registration.
+- Supports deliberate multi-user use without public registration.
 
 Cons
 
@@ -122,23 +122,43 @@ Reasoning: Closed owner control preserves the product promise while retaining de
 
 Status
 
-Draft
+Approved
 
 Decision
 
-Use first-owner initialization followed by owner-approved access. Public self-registration is not permitted.
+Pocket Mint adopts First Owner with Controlled Access.
+
+An uninitialized installation permits one narrowly scoped initialization journey. The first account to complete that journey becomes the installation's single active Owner. Owner creation must be atomic so concurrent attempts cannot create multiple Owners.
+
+After initialization, public self-registration is prohibited. Additional accounts require explicit Owner approval through an invitation or allowlist. Owner approval authorizes admission only; it does not authenticate the person, create financial ownership for them, or grant access before identity verification is complete.
+
+Invitation is the preferred admission experience because it can be identity-bound, expiring, revocable, and single-use. An Owner-managed allowlist is an acceptable self-hosting alternative when it identifies the permitted account precisely and follows the same verification, revocation, and privacy rules. A pending invitation or allowlist entry grants no product access.
+
+Pocket Mint supports additional Users as a current controlled-access capability. This does not make Pocket Mint a collaborative finance product. Each User owns isolated financial resources, and no User may see or affect another User's resources. Shared wallets, household financial summaries, delegated financial access, and collaborative ownership are outside this decision.
+
+The Owner is also a User, but Owner authority is limited to installation-level responsibilities such as admission and installation settings. Owner authority must never bypass User resource isolation, impersonate another User, or confer access to another User's financial data.
+
+Only non-financial landing content, first-Owner initialization while uninitialized, authentication, approved authentication callbacks, invitation or allowlist admission completion, account recovery, and minimal health capabilities may be reachable without an authenticated session. These public capabilities must reveal no private financial information and must not disclose whether an account or invitation exists beyond what is necessary for a valid flow.
+
+Every user-financial capability requires an authenticated identity. The Backend must enforce User scope and resource authorization for every financial query and mutation regardless of whether the caller is the Frontend, Automation, an integration, or a future client. Frontend route protection improves privacy and navigation but is not an authorization boundary.
+
+Every User may recover their own account through an approved recovery path that does not disclose account existence. Owner recovery restores the existing Owner identity when possible. If the Owner is permanently unavailable, replacement requires an explicit installation-controlled recovery procedure with proof of installation control and an auditable transfer of installation authority. No User is promoted automatically. Owner replacement does not transfer, expose, or merge the former Owner's financial resources.
+
+Automation and service identities require explicit authorization and narrowly defined User scope. They use the same Backend and Business Services boundaries as interactive clients and receive no financial authority from being approved by the Owner. The Owner cannot authorize Automation to access another User's resources on that User's behalf.
+
+Existing installations must transition away from public signup without treating the next post-transition registrant as Owner. New registration must close, one legitimate account must be deliberately established as Owner, and existing accounts must be reviewed under the controlled-admission policy. Existing financial resources must remain attached to their current User identities and must not be silently transferred, merged, exposed, or deleted during transition.
 
 Approved By
 
-Pending
+Product
 
 Approved On
 
-Pending
+2026-07-14
 
 Rationale
 
-This policy balances privacy-first ownership with optional multi-user support.
+A closed, Owner-controlled installation is consistent with Pocket Mint's privacy-first and self-hosting goals while allowing deliberate household deployment. Separating installation authority from User resource ownership prevents the Owner role from becoming a financial superuser. Explicit public exceptions make authentication, recovery, health checks, and safe initialization possible without weakening the protected financial boundary.
 
 ---
 
@@ -147,7 +167,10 @@ This policy balances privacy-first ownership with optional multi-user support.
 - [x] product-rfc.md
 - [ ] design-system.md
 - [x] screen-spec.md
-- [x] component-spec.md
+- [ ] component-spec.md
+- [x] glossary.md
+- [x] system-architecture.md
+- [x] project-context.md
 
 ---
 
@@ -167,7 +190,7 @@ Owner and invitation state may need explicit representation.
 
 Automation
 
-Automated access must remain owner-authorized.
+Automated access must remain explicitly authorized and User-scoped. Owner approval cannot bypass another User's authorization.
 
 Migration Required
 
@@ -198,3 +221,4 @@ An unclear first-owner recovery process could lock users out. Existing deploymen
 | Date | Status | Notes |
 |------|--------|------|
 | 2026-07-14 | Draft | Initial creation |
+| 2026-07-14 | Approved | Adopted First Owner with Controlled Access and explicit public-access exceptions. |
