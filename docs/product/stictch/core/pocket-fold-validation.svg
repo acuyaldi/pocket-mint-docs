@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1500" viewBox="0 0 1600 1500" role="img" aria-labelledby="sheet-title sheet-description">
+  <title id="sheet-title">Pocket Mint Pocket Fold logo validation sheet</title>
+  <desc id="sheet-description">Validation of the approved Pocket Fold mark across icon sizes, brand backgrounds, approved colors, product contexts, and a horizontal wordmark lockup.</desc>
+
+  <defs>
+    <symbol id="pocket-fold" viewBox="0 0 24 24">
+      <path fill="currentColor" d="M5 1.75h12L13.75 5h-7A1.5 1.5 0 0 0 5.25 6.5v11.25a1.5 1.5 0 0 0 1.5 1.5h10.5a1.5 1.5 0 0 0 1.5-1.5V9l3.5-3.5V19A3.25 3.25 0 0 1 19 22.25H5A3.25 3.25 0 0 1 1.75 19V5A3.25 3.25 0 0 1 5 1.75Z"/>
+    </symbol>
+  </defs>
+
+  <rect width="1600" height="1500" fill="#ffffff"/>
+
+  <g font-family="Inter, Arial, sans-serif" fill="#1a1c1c">
+    <text x="64" y="66" font-size="30" font-weight="600">Pocket Fold — Logo Validation</text>
+    <text x="64" y="94" font-size="14" fill="#414848">Approved geometry · monochrome system · production contexts</text>
+
+    <line x1="64" y1="122" x2="1536" y2="122" stroke="#e2e2e2"/>
+
+    <text x="64" y="164" font-size="16" font-weight="600">01 / Icon-only size test</text>
+    <text x="64" y="188" font-size="12" fill="#717978">Displayed at exact CSS pixel dimensions</text>
+
+    <g color="#0F172A">
+      <use href="#pocket-fold" x="102" y="222" width="16" height="16"/>
+      <use href="#pocket-fold" x="292" y="220" width="20" height="20"/>
+      <use href="#pocket-fold" x="480" y="218" width="24" height="24"/>
+      <use href="#pocket-fold" x="666" y="214" width="32" height="32"/>
+      <use href="#pocket-fold" x="844" y="206" width="48" height="48"/>
+      <use href="#pocket-fold" x="1022" y="198" width="64" height="64"/>
+    </g>
+    <g font-size="12" fill="#414848" text-anchor="middle">
+      <text x="110" y="282">16px</text>
+      <text x="302" y="282">20px</text>
+      <text x="492" y="282">24px</text>
+      <text x="682" y="282">32px</text>
+      <text x="868" y="282">48px</text>
+      <text x="1054" y="282">64px</text>
+    </g>
+
+    <line x1="64" y1="318" x2="1536" y2="318" stroke="#e2e2e2"/>
+
+    <text x="64" y="360" font-size="16" font-weight="600">02 / Background test</text>
+    <text x="64" y="384" font-size="12" fill="#717978">No effects; mark color selected only for contrast</text>
+
+    <g>
+      <rect x="64" y="410" width="340" height="120" fill="#ffffff" stroke="#e2e2e2"/>
+      <g color="#0F172A"><use href="#pocket-fold" x="210" y="438" width="64" height="64"/></g>
+      <text x="64" y="554" font-size="12" fill="#414848">White · Slate mark</text>
+
+      <rect x="440" y="410" width="340" height="120" fill="#f9f9f8"/>
+      <g color="#001414"><use href="#pocket-fold" x="586" y="438" width="64" height="64"/></g>
+      <text x="440" y="554" font-size="12" fill="#414848">Surface #f9f9f8 · Dark-teal mark</text>
+
+      <rect x="816" y="410" width="340" height="120" fill="#0F172A"/>
+      <g color="#ffffff"><use href="#pocket-fold" x="962" y="438" width="64" height="64"/></g>
+      <text x="816" y="554" font-size="12" fill="#414848">Slate #0F172A · White reversed</text>
+
+      <rect x="1192" y="410" width="340" height="120" fill="#001414"/>
+      <g color="#ffffff"><use href="#pocket-fold" x="1338" y="438" width="64" height="64"/></g>
+      <text x="1192" y="554" font-size="12" fill="#414848">Dark teal #001414 · White reversed</text>
+    </g>
+
+    <line x1="64" y1="590" x2="1536" y2="590" stroke="#e2e2e2"/>
+
+    <text x="64" y="632" font-size="16" font-weight="600">03 / Color test</text>
+    <text x="64" y="656" font-size="12" fill="#717978">Single-color operation only</text>
+
+    <g>
+      <g color="#0F172A"><use href="#pocket-fold" x="92" y="686" width="48" height="48"/></g>
+      <text x="92" y="756" font-size="12" fill="#414848">Slate</text>
+      <text x="92" y="776" font-size="11" fill="#717978">#0F172A</text>
+
+      <g color="#001414"><use href="#pocket-fold" x="304" y="686" width="48" height="48"/></g>
+      <text x="304" y="756" font-size="12" fill="#414848">Primary dark teal</text>
+      <text x="304" y="776" font-size="11" fill="#717978">#001414</text>
+
+      <g color="#000000"><use href="#pocket-fold" x="560" y="686" width="48" height="48"/></g>
+      <text x="560" y="756" font-size="12" fill="#414848">Pure black</text>
+      <text x="560" y="776" font-size="11" fill="#717978">#000000</text>
+
+      <rect x="790" y="672" width="128" height="76" fill="#0F172A"/>
+      <g color="#ffffff"><use href="#pocket-fold" x="830" y="686" width="48" height="48"/></g>
+      <text x="790" y="772" font-size="12" fill="#414848">Pure white reversed</text>
+    </g>
+
+    <line x1="64" y1="816" x2="1536" y2="816" stroke="#e2e2e2"/>
+
+    <text x="64" y="858" font-size="16" font-weight="600">04 / Usage previews</text>
+    <text x="64" y="882" font-size="12" fill="#717978">Representative scale and alignment only</text>
+
+    <g>
+      <text x="64" y="918" font-size="12" fill="#414848">Browser favicon · 16px</text>
+      <rect x="64" y="934" width="420" height="54" fill="#f4f3f3"/>
+      <rect x="80" y="946" width="220" height="42" fill="#ffffff"/>
+      <g color="#0F172A"><use href="#pocket-fold" x="96" y="959" width="16" height="16"/></g>
+      <text x="124" y="972" font-size="13" font-weight="500">Pocket Mint</text>
+
+      <text x="534" y="918" font-size="12" fill="#414848">Desktop sidebar · 24px</text>
+      <rect x="534" y="934" width="420" height="54" fill="#f9f9f8"/>
+      <g color="#0F172A"><use href="#pocket-fold" x="554" y="949" width="24" height="24"/></g>
+      <text x="592" y="969" font-size="16" font-weight="600">Pocket Mint</text>
+
+      <text x="1004" y="918" font-size="12" fill="#414848">Collapsed sidebar · 24px</text>
+      <rect x="1004" y="934" width="80" height="54" fill="#f9f9f8"/>
+      <g color="#0F172A"><use href="#pocket-fold" x="1032" y="949" width="24" height="24"/></g>
+
+      <text x="64" y="1044" font-size="12" fill="#414848">Mobile top bar · 24px</text>
+      <rect x="64" y="1060" width="420" height="56" fill="#ffffff" stroke="#e2e2e2"/>
+      <g color="#0F172A"><use href="#pocket-fold" x="84" y="1076" width="24" height="24"/></g>
+      <text x="122" y="1096" font-size="16" font-weight="600">Pocket Mint</text>
+
+      <text x="534" y="1044" font-size="12" fill="#414848">Login identity · 32px</text>
+      <g color="#001414"><use href="#pocket-fold" x="554" y="1072" width="32" height="32"/></g>
+      <text x="602" y="1097" font-size="22" font-weight="600">Pocket Mint</text>
+
+      <text x="1004" y="1044" font-size="12" fill="#414848">App icon · 48px</text>
+      <g color="#0F172A"><use href="#pocket-fold" x="1020" y="1064" width="48" height="48"/></g>
+    </g>
+
+    <line x1="64" y1="1160" x2="1536" y2="1160" stroke="#e2e2e2"/>
+
+    <text x="64" y="1202" font-size="16" font-weight="600">05 / Horizontal wordmark lockup</text>
+    <text x="64" y="1226" font-size="12" fill="#717978">Inter SemiBold · no tagline · compact 12px gap</text>
+
+    <g color="#0F172A">
+      <use href="#pocket-fold" x="64" y="1264" width="32" height="32"/>
+    </g>
+    <text x="108" y="1289" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="600" letter-spacing="-0.3">Pocket Mint</text>
+
+    <g transform="translate(64 1360)">
+      <line x1="0" y1="0" x2="1472" y2="0" stroke="#e2e2e2"/>
+      <text x="0" y="40" font-size="12" fill="#414848">Geometry: unchanged approved Pocket Fold path</text>
+      <text x="0" y="64" font-size="12" fill="#717978">ViewBox 0 0 24 24 · currentColor · one path · no strokes or effects</text>
+    </g>
+  </g>
+</svg>
