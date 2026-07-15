@@ -1,84 +1,71 @@
 ---
 name: Pocket Mint
-status: draft
-origin: Stitch AI
----
-
-# Pocket Mint — Design System
-
-> Status: Requires implementation reconciliation  
-> Origin: Stitch AI output, subsequently modified during implementation  
-> This document describes the intended visual system.  
-> Current frontend behavior must be audited before this becomes authoritative.
-
-name: Pocket Mint
 colors:
-  surface: '#f8f9ff'
-  surface-dim: '#cbdbf5'
-  surface-bright: '#f8f9ff'
+  surface: '#f9f9f8'
+  surface-dim: '#dadad9'
+  surface-bright: '#f9f9f8'
   surface-container-lowest: '#ffffff'
-  surface-container-low: '#eff4ff'
-  surface-container: '#e5eeff'
-  surface-container-high: '#dce9ff'
-  surface-container-highest: '#d3e4fe'
-  on-surface: '#0b1c30'
-  on-surface-variant: '#3d4a3e'
-  inverse-surface: '#213145'
-  inverse-on-surface: '#eaf1ff'
-  outline: '#6d7b6d'
-  outline-variant: '#bccabb'
-  surface-tint: '#006d36'
-  primary: '#006d36'
+  surface-container-low: '#f4f3f3'
+  surface-container: '#eeeeed'
+  surface-container-high: '#e8e8e7'
+  surface-container-highest: '#e2e2e2'
+  on-surface: '#1a1c1c'
+  on-surface-variant: '#414848'
+  inverse-surface: '#2f3130'
+  inverse-on-surface: '#f1f1f0'
+  outline: '#717978'
+  outline-variant: '#c0c8c7'
+  surface-tint: '#406564'
+  primary: '#001414'
   on-primary: '#ffffff'
-  primary-container: '#4ade80'
-  on-primary-container: '#005e2d'
-  inverse-primary: '#4de082'
-  secondary: '#545f73'
+  primary-container: '#002b2b'
+  on-primary-container: '#6e9493'
+  inverse-primary: '#a7cecd'
+  secondary: '#505f76'
   on-secondary: '#ffffff'
-  secondary-container: '#d5e0f8'
-  on-secondary-container: '#586377'
-  tertiary: '#895024'
+  secondary-container: '#d0e1fb'
+  on-secondary-container: '#54647a'
+  tertiary: '#230a02'
   on-tertiary: '#ffffff'
-  tertiary-container: '#ffb47f'
-  on-tertiary-container: '#794418'
+  tertiary-container: '#3c1e11'
+  on-tertiary-container: '#b08370'
   error: '#ba1a1a'
   on-error: '#ffffff'
   error-container: '#ffdad6'
   on-error-container: '#93000a'
-  primary-fixed: '#6dfe9c'
-  primary-fixed-dim: '#4de082'
-  on-primary-fixed: '#00210c'
-  on-primary-fixed-variant: '#005227'
-  secondary-fixed: '#d8e3fb'
-  secondary-fixed-dim: '#bcc7de'
-  on-secondary-fixed: '#111c2d'
-  on-secondary-fixed-variant: '#3c475a'
-  tertiary-fixed: '#ffdcc6'
-  tertiary-fixed-dim: '#ffb784'
-  on-tertiary-fixed: '#301400'
-  on-tertiary-fixed-variant: '#6c3a0f'
-  background: '#f8f9ff'
-  on-background: '#0b1c30'
-  surface-variant: '#d3e4fe'
+  primary-fixed: '#c2eae9'
+  primary-fixed-dim: '#a7cecd'
+  on-primary-fixed: '#002020'
+  on-primary-fixed-variant: '#274d4c'
+  secondary-fixed: '#d3e4fe'
+  secondary-fixed-dim: '#b7c8e1'
+  on-secondary-fixed: '#0b1c30'
+  on-secondary-fixed-variant: '#38485d'
+  tertiary-fixed: '#ffdbcd'
+  tertiary-fixed-dim: '#efbba7'
+  on-tertiary-fixed: '#2f1408'
+  on-tertiary-fixed-variant: '#623e2f'
+  background: '#f9f9f8'
+  on-background: '#1a1c1c'
+  surface-variant: '#e2e2e2'
+  mint-positive: '#2DD4BF'
+  amber-warning: '#F59E0B'
+  coral-error: '#F87171'
+  slate-neutral: '#0F172A'
 typography:
-  display-lg:
-    fontFamily: Inter
-    fontSize: 48px
-    fontWeight: '700'
-    lineHeight: 56px
-    letterSpacing: -0.02em
-  headline-lg:
+  financial-display:
     fontFamily: Inter
     fontSize: 32px
     fontWeight: '600'
     lineHeight: 40px
-    letterSpacing: -0.01em
-  headline-lg-mobile:
+    letterSpacing: -0.02em
+  financial-display-mobile:
     fontFamily: Inter
     fontSize: 24px
     fontWeight: '600'
     lineHeight: 32px
-  title-md:
+    letterSpacing: -0.01em
+  headline-md:
     fontFamily: Inter
     fontSize: 20px
     fontWeight: '600'
@@ -88,22 +75,22 @@ typography:
     fontSize: 16px
     fontWeight: '400'
     lineHeight: 24px
-  body-sm:
+  body-md:
     fontFamily: Inter
     fontSize: 14px
     fontWeight: '400'
     lineHeight: 20px
-  label-md:
+  label-sm:
     fontFamily: Inter
     fontSize: 12px
-    fontWeight: '600'
-    lineHeight: 16px
-    letterSpacing: 0.05em
-  data-mono:
-    fontFamily: Inter
-    fontSize: 16px
     fontWeight: '500'
-    lineHeight: 24px
+    lineHeight: 16px
+    letterSpacing: 0.02em
+  metadata:
+    fontFamily: Inter
+    fontSize: 12px
+    fontWeight: '400'
+    lineHeight: 16px
 rounded:
   sm: 0.25rem
   DEFAULT: 0.5rem
@@ -112,92 +99,726 @@ rounded:
   xl: 1.5rem
   full: 9999px
 spacing:
-  base: 4px
-  xs: 4px
-  sm: 8px
-  md: 16px
-  lg: 24px
-  xl: 32px
-  gutter: 16px
-  margin-mobile: 16px
-  margin-desktop: 40px
+  base: 8px
+  internal: 16px
+  card-padding: 24px
+  section: 32px
+  desktop-safe-area: 40px
+  tablet-safe-area: 32px
+  mobile-margin: 20px
+  max-width: 1280px
 ---
 
-## Brand & Style
-The brand personality is grounded in financial clarity and proactive growth. It targets the self-hosting enthusiast who values privacy and precision. The emotional response should be one of "controlled transparency"—the user feels in command of their data through a clean, systematic interface.
+# Pocket Mint — DESIGN.md
 
-The design style is **Corporate / Modern** with a focus on data density and legibility. It utilizes a refined digital-first aesthetic that avoids unnecessary decoration, favoring functional whitespace and subtle depth to organize complex financial information. 
-- **Growth-Centric:** Mint green is used purposefully to highlight positive trends.
-- **Trust-Driven:** Deep slate provides a stable foundation, ensuring the UI feels robust and institutional.
-- **Precision-Focused:** Every element aligns to a strict grid to reinforce the feeling of an organized ledger.
+Version: 2.0
 
-## Colors
-This design system uses a logic-gated color palette where hue communicates financial status:
-- **Primary (Mint Green):** Reserved for "Assets," "Income," and "Growth." It represents the "Mint" in the brand name.
-- **Secondary (Deep Slate):** Used for primary navigation, headings, and high-contrast text to convey stability and security.
-- **Accent (Amber):** Specific to "Pending" states, upcoming installments, or warnings that require attention but aren't critical failures.
-- **Error (Coral Red):** Dedicated to "Debt," "Over-budget" alerts, and negative cash flow indicators.
+Status: Authoritative
 
-The background uses a subtle off-white (`#f8fafc`) to reduce eye strain, while cards and containers use pure white to pop from the background.
+Purpose: Google Stitch Design Brief
 
-## Typography
-Inter is selected for its exceptional legibility and neutral, professional tone. 
+---
 
-**Numerical Data:**
-All currency and balance displays must use `tabular-nums` (Tabular Figures). This ensures that decimal points and digits align vertically in lists and tables, allowing users to scan and compare values rapidly without visual jitter.
+# Product
 
-**Hierarchy:**
-- **Headlines:** Use tighter letter spacing and Semi-Bold weights to create a strong anchor for page sections.
-- **Labels:** Small, uppercase labels are used for metadata like "Transaction Date" or "Account Type" to differentiate from primary content.
-- **Body:** Standardized at 16px for optimal readability in data-heavy contexts.
+Name
 
-## Layout & Spacing
-The layout follows a **Fluid Grid** model with a max-width container of 1280px for desktop to maintain readability.
+Pocket Mint
 
-- **Grid:** A 12-column grid for desktop, 8-column for tablet, and 4-column for mobile.
-- **Rhythm:** An 8px (base 4) spacing system governs all margins and paddings.
-- **Padding:** High-level dashboard widgets should use `lg` (24px) internal padding to provide "breathing room" for financial data.
-- **Mobile Adaptivity:** On mobile, widgets stack vertically and horizontal margins reduce to 16px. Transaction rows remain full-width to maximize the touch target and horizontal space for currency values.
+Category
 
-## Elevation & Depth
-Depth is created through **Tonal Layers** and **Ambient Shadows** to differentiate between the canvas and interactive elements.
+Private Financial Workspace
 
-- **Level 0 (Canvas):** The base background layer, using a very light slate tint.
-- **Level 1 (Cards):** Primary containers for wallets and widgets. These use a soft, highly diffused shadow (Blur: 12px, Y: 4px, Opacity: 4%) to appear slightly lifted.
-- **Level 2 (Modals/Dropdowns):** Higher elevation with a more pronounced shadow (Blur: 20px, Y: 8px, Opacity: 8%) and a subtle 1px border using the secondary color at 10% opacity.
-- **Interactive States:** Buttons and cards use a slight scale-down (0.98x) on click rather than heavy shadow changes to maintain the "Modern Fintech" polish.
+Platform
 
-## Shapes
-The design system utilizes **Rounded** shapes (8px / 0.5rem) to soften the professional tone, making the financial data feel approachable rather than intimidating.
+Responsive Web Application
 
-- **Standard Elements:** Buttons, input fields, and small cards use the 8px base radius.
-- **Large Containers:** Dashboard widgets and main wallet cards use `rounded-lg` (16px) to define major layout sections.
-- **Chips/Status Tags:** Utilize `rounded-xl` (24px) or full pill-shape to distinguish them from interactive buttons.
+Primary Language
 
-## Components
+Bahasa Indonesia
 
-### Wallet Cards
-Wallet cards are the primary data containers. 
-- **Asset Wallets:** Feature a 4px left-border accent of Primary Mint.
-- **Debt Wallets:** Feature a 4px left-border accent of Coral Red.
-- Cards must include a "Balance" in `display-lg` and a "Limit/Available" secondary line in `body-sm`.
+Target Devices
 
-### Transaction Rows
-- Layout: [Icon/Category] [Merchant/Name (Bold)] [Date/Subtext] --- [Amount (Tabular)].
-- Positive transactions (Income) use Primary Mint for the amount text.
-- Negative transactions (Expenses) use the Secondary Slate.
+- Desktop
+- Tablet
+- Mobile
 
-### Installment Progress Bars
-- High-contrast track (Slate at 10% opacity) with a solid Primary Mint fill.
-- If an installment is "Pending" or "Upcoming," the fill color shifts to Accent Amber.
-- Always include "X of Y months" label aligned to the right.
+---
 
-### Net Worth Summary Widgets
-- A hero-style component at the top of the dashboard.
-- Uses a large-scale line chart (sparkline) with a gradient fill.
-- The "Net Worth" total is always the largest typographic element on the page.
+# Product Identity
 
-### Buttons & Inputs
-- **Primary Button:** Solid Secondary Slate background with white text.
-- **Secondary Button:** White background with a 1px Slate border.
-- **Inputs:** Clean, 1px bordered boxes that highlight in Primary Mint on focus. Error states use a Coral Red border and subtext.
+Pocket Mint is a Private Financial Workspace.
+
+It helps users answer:
+
+• What do I own?
+
+• What do I owe?
+
+• What requires attention?
+
+• What happened recently?
+
+Pocket Mint is designed for people who want clarity over complexity.
+
+The product should always feel:
+
+- Calm
+- Professional
+- Trustworthy
+- Organized
+- Private
+- Information-first
+
+Never playful.
+
+Never marketing-heavy.
+
+Never gamified.
+
+---
+
+# Product Positioning
+
+Pocket Mint is NOT:
+
+- Expense Tracker
+- Banking Application
+- Budgeting Game
+- Crypto Dashboard
+- Investment Platform
+- Generic Admin Dashboard
+
+Pocket Mint IS:
+
+A personal financial workspace that provides a clear picture of someone's financial position.
+
+---
+
+# Design Philosophy
+
+Pocket Mint follows one principle:
+
+Financial clarity over visual decoration.
+
+Every component exists to improve understanding.
+
+Never add visual elements that do not improve comprehension.
+
+Whitespace is functional.
+
+Typography is functional.
+
+Color communicates meaning.
+
+---
+
+# Visual Language
+
+Visual style should feel closer to:
+
+- Linear
+- Notion
+- Raycast
+- 1Password
+
+Avoid visual inspiration from:
+
+- Mobile Banking Apps
+- Crypto Exchanges
+- Trading Platforms
+- Consumer Fintech Marketing Sites
+
+The interface should feel premium through restraint rather than decoration.
+
+---
+
+# Layout Philosophy
+
+Pocket Mint follows a clean application layout.
+
+Desktop
+
+Sidebar
+
+↓
+
+Page Header
+
+↓
+
+Content
+
+Tablet
+
+Compact Navigation
+
+↓
+
+Content
+
+Mobile
+
+Top App Bar
+
+↓
+
+Content
+
+↓
+
+Bottom Navigation
+
+---
+
+# Responsive Philosophy
+
+Desktop is the master breakpoint.
+
+Tablet and Mobile inherit the Desktop visual language.
+
+Responsive layouts may adapt:
+
+- Width
+- Columns
+- Stacking
+
+Responsive layouts must never change:
+
+- Component style
+- Typography hierarchy
+- Border radius
+- Elevation
+- Color system
+- Card design
+- Icon style
+- Spacing scale
+
+Every breakpoint should feel like the same product.
+
+---
+
+# Information Hierarchy
+
+Every screen should communicate information in this order:
+
+Primary
+
+↓
+
+Supporting
+
+↓
+
+Actions
+
+↓
+
+History
+
+Users should understand before interacting.
+
+---
+
+# Spacing System
+
+Base spacing
+
+8px rhythm
+
+Major section spacing
+
+32px
+
+Card padding
+
+24px
+
+Internal spacing
+
+16px
+
+Desktop safe area
+
+40px
+
+Tablet safe area
+
+32px
+
+Mobile horizontal margin
+
+20px
+
+Avoid cramped layouts.
+
+Avoid excessive whitespace.
+
+---
+
+# Grid
+
+Desktop
+
+12 columns
+
+Tablet
+
+8 columns
+
+Mobile
+
+4 columns
+
+Maximum desktop content width
+
+1280px
+
+---
+
+# Color Philosophy
+
+Color communicates financial meaning.
+
+Primary
+
+Mint
+
+Assets
+
+Income
+
+Positive values
+
+Secondary
+
+Slate
+
+Navigation
+
+Neutral interface
+
+Typography
+
+Warning
+
+Amber
+
+Upcoming
+
+Needs Attention
+
+Pending
+
+Error
+
+Coral Red
+
+Debt
+
+Negative balances
+
+Critical financial states
+
+Never use color only for hierarchy.
+
+Typography should establish importance first.
+
+---
+
+# Typography
+
+Font
+
+Inter
+
+Use tabular figures for all financial numbers.
+
+Hierarchy
+
+Financial Values
+
+↓
+
+Section Titles
+
+↓
+
+Body
+
+↓
+
+Metadata
+
+Numbers always receive the strongest emphasis.
+
+Labels should never compete with values.
+
+---
+
+# Elevation
+
+Use minimal elevation.
+
+Cards separate information.
+
+Not decoration.
+
+Canvas
+
+↓
+
+Cards
+
+↓
+
+Modal
+
+Avoid heavy shadows.
+
+Avoid glassmorphism.
+
+Avoid neumorphism.
+
+---
+
+# Shape
+
+Default corner radius
+
+12px
+
+Large containers
+
+16px
+
+Pills
+
+999px
+
+Keep shapes soft but professional.
+
+---
+
+# Components
+
+Every shared component has only one visual definition.
+
+The following components must remain visually identical across Desktop, Tablet and Mobile:
+
+- Hero Card
+- Wallet Card
+- Summary Card
+- Quick Action
+- Activity Row
+- Installment Card
+- Buttons
+- Inputs
+- Section Header
+
+Responsive layouts adapt composition only.
+
+Never redesign components for different breakpoints.
+
+---
+
+# Hero Card
+
+Purpose
+
+Communicate the user's financial position.
+
+Contains only:
+
+- Net Worth
+- Total Assets
+- Total Outstanding Debt
+- Reporting Cutoff
+
+Never include:
+
+- Charts
+- Sparklines
+- Trend graphs
+- Decorative analytics
+- KPI dashboards
+
+The Hero Card is always the primary visual anchor.
+
+---
+
+# Wallet Cards
+
+Each wallet displays:
+
+- Wallet Name
+- Wallet Type
+- Balance
+
+Optional:
+
+- Institution
+
+Assets use Mint semantic accents.
+
+Debt wallets use Coral semantic accents.
+
+Balance is always the dominant information.
+
+---
+
+# Transaction Rows
+
+Each transaction contains:
+
+- Category Icon
+- Title
+- Metadata
+- Amount
+
+Income
+
+Mint
+
+Expense
+
+Dark neutral
+
+Debt
+
+Coral
+
+Amounts use tabular figures.
+
+---
+
+# Installment Cards
+
+Display
+
+- Installment Name
+- Monthly Payment
+- Remaining Balance
+- Due Date
+
+Progress indicators communicate repayment only.
+
+Never gamify repayment.
+
+---
+
+# Buttons
+
+Primary
+
+Solid Slate
+
+Secondary
+
+Outlined
+
+Danger
+
+Coral
+
+Buttons remain compact.
+
+Never oversized.
+
+---
+
+# Navigation
+
+Desktop
+
+Sidebar
+
+Mobile
+
+Bottom Navigation
+
+Navigation labels
+
+Dashboard
+
+Dompet
+
+Transaksi
+
+Cicilan
+
+Akun
+
+Never rename navigation.
+
+---
+
+# Dashboard Philosophy
+
+The Dashboard is not an analytics page.
+
+The Dashboard answers:
+
+What is my financial position today?
+
+What requires my attention?
+
+What should I do next?
+
+Where is my money?
+
+What happened recently?
+
+Reading order
+
+Financial Position
+
+↓
+
+Needs Attention
+
+↓
+
+Quick Actions
+
+↓
+
+Wallet Overview
+
+↓
+
+Current Period Summary
+
+↓
+
+Recent Activity
+
+Never change this hierarchy.
+
+---
+
+# Wallet Philosophy
+
+The Wallet screen is an inventory.
+
+Users immediately understand:
+
+Assets
+
+Liabilities
+
+Balances
+
+Wallet organization
+
+---
+
+# Transactions Philosophy
+
+The Transactions screen is a financial journal.
+
+It prioritizes:
+
+Search
+
+History
+
+Editing
+
+Never analytics.
+
+---
+
+# Installments Philosophy
+
+The Installments screen prioritizes obligations.
+
+Users immediately understand:
+
+Upcoming payments
+
+Overdue payments
+
+Remaining balance
+
+Repayment progress
+
+---
+
+# Landing Philosophy
+
+The Landing page builds trust.
+
+Story flow
+
+Identity
+
+↓
+
+Trust
+
+↓
+
+Features
+
+↓
+
+Privacy
+
+↓
+
+Call To Action
+
+Never become a marketing-heavy landing page.
+
+---
+
+# Accessibility
+
+Maintain sufficient contrast.
+
+Touch targets
+
+Minimum 44px
+
+Never communicate status using color alone.
+
+Support keyboard navigation.
+
+---
+
+# AI Generation Rules
+
+Treat this document as the authoritative design brief.
+
+Generate production-ready interfaces.
+
+Do not generate concept art.
+
+Do not generate multiple visual directions.
+
+Do not redesign shared components.
+
+Do not invent new product features.
+
+Do not invent additional sections.
+
+Do not generate fake charts.
+
+Do not generate decorative analytics.
+
+Do not generate placeholder branding.
+
+Always use:
+
+Pocket Mint
+
+The goal is implementation quality.
+
+Not exploration.
+
+Not experimentation.
+
+Not concept generation.
+
+# End DataStore Snapshot
