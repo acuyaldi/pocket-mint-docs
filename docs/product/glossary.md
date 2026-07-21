@@ -880,6 +880,138 @@ Product rules, backend documentation, test requirements
 **Examples**
 Net Worth = Total Assets − Total Outstanding Debt is a Canonical Calculation; no surface may substitute its own variant.
 
+## Budget
+
+**Definition**
+A User-owned, recurring monthly spending limit for one expense Category. Budget Spent is calculated dynamically from posted Expense transactions in the current Reporting Period; nothing about a Budget's usage is stored or cached.
+
+Governed by [PD-009](decisions/009-budgeting-scope.md) (Approved). Domain foundation (model, calculation service) implemented; not yet exposed via API or UI. Not to be confused with an envelope-budgeting system, which Pocket Mint's Non-Goals continue to exclude; a Budget tracks a spend limit against recorded Financial Events and never allocates or moves funds between Categories.
+
+**Why it exists**
+Users need a calm, precise answer to how much they may still spend in a Category this month, without adopting a gamified or envelope-allocation model.
+
+**Related Terms**
+Budget Limit, Budget Spent, Budget Remaining, Budget Period, Budget Status, Category, Reporting Period
+
+**Not To Be Confused With**
+Credit Limit, which mirrors a provider's contractual limit on a Debt Wallet. A Budget Limit is a User-chosen spending target with no relationship to debt.
+
+**Used In**
+Budgets, Dashboard (summary), notifications
+
+**Examples**
+A Budget of 2,000,000 for the "Makan" Category tracks that Category's Expense transactions each month against that limit.
+
+## Budget Limit
+
+**Definition**
+The fixed monthly amount a Budget tracks Category spending against.
+
+Governed by [PD-009](decisions/009-budgeting-scope.md) (Approved).
+
+**Why it exists**
+Gives Budget Spent and Budget Remaining a fixed point of comparison each Reporting Period.
+
+**Related Terms**
+Budget, Budget Spent, Budget Remaining
+
+**Not To Be Confused With**
+Credit Limit. See Budget.
+
+**Used In**
+Budgets
+
+**Examples**
+A Budget Limit of 2,000,000 with Budget Spent of 1,500,000 leaves a Budget Remaining of 500,000.
+
+## Budget Spent
+
+**Definition**
+The sum of a User's posted Expense transactions in a Category during the current Reporting Period, calculated live and never stored.
+
+Governed by [PD-009](decisions/009-budgeting-scope.md) (Approved).
+
+**Why it exists**
+Answers "how much have I spent" without duplicating Ledger data into a separate cached figure that could drift from the Ledger.
+
+**Related Terms**
+Budget, Budget Limit, Budget Remaining, Expense, Ledger
+
+**Not To Be Confused With**
+Total Outstanding Debt or Total Assets, which are wallet-level, not Category-level.
+
+**Used In**
+Budgets, Dashboard (summary)
+
+**Examples**
+Two Expense transactions of 300,000 and 500,000 in the "Makan" Category this month give a Budget Spent of 800,000.
+
+## Budget Remaining
+
+**Definition**
+Budget Limit minus Budget Spent for the current Reporting Period. May be negative; a negative Budget Remaining is never clamped to zero.
+
+Governed by [PD-009](decisions/009-budgeting-scope.md) (Approved).
+
+**Why it exists**
+Gives the User the single number that answers "how much may I still spend."
+
+**Related Terms**
+Budget, Budget Limit, Budget Spent, Budget Status
+
+**Not To Be Confused With**
+Available Credit, which applies to Debt Wallets, not Budgets.
+
+**Used In**
+Budgets, Dashboard (summary)
+
+**Examples**
+Budget Limit 2,000,000 with Budget Spent 2,500,000 gives a Budget Remaining of −500,000.
+
+## Budget Period
+
+**Definition**
+The current calendar month in the Reporting Timezone against which a Budget's usage is evaluated. A Budget is a recurring definition, not a dated instance — its Budget Period always refers to the current month in v1.
+
+Governed by [PD-009](decisions/009-budgeting-scope.md) (Approved).
+
+**Why it exists**
+Reuses the same monthly Reporting Period convention already used by Reports and the Dashboard, so a Budget's month always matches every other monthly figure the User sees.
+
+**Related Terms**
+Budget, Reporting Period, Reporting Timezone
+
+**Not To Be Confused With**
+Reporting Period in general, which spans other product surfaces too; a Budget Period is that same concept applied to one Budget.
+
+**Used In**
+Budgets
+
+**Examples**
+In July, a Budget's Budget Period runs from 1 July 00:00 to 1 August 00:00 in the Reporting Timezone.
+
+## Budget Status
+
+**Definition**
+The deterministic state of a Budget for its current Budget Period: Healthy (below 75% used), Approaching (75% up to but below 100%), Reached (exactly 100% used), Exceeded (more than 100% used), or Archived (excluded from evaluation).
+
+Governed by [PD-009](decisions/009-budgeting-scope.md) (Approved).
+
+**Why it exists**
+Gives every screen the same, consistently computed status instead of ad hoc per-screen thresholds. Reached is a distinct state from Exceeded so hitting the limit exactly is never conflated with going over it.
+
+**Related Terms**
+Budget, Budget Remaining, Debt Ratio (a similarly threshold-based Derived Metric for a different concept)
+
+**Not To Be Confused With**
+Debt Ratio, which applies to Debt Wallets and uses different thresholds (30%/80%) for a different purpose.
+
+**Used In**
+Budgets, Dashboard (summary), notifications
+
+**Examples**
+A Budget at 82% used is Approaching; at exactly 100% it is Reached; at 101% used it is Exceeded.
+
 ## Negative Net Worth
 
 **Definition**

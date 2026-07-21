@@ -85,11 +85,13 @@ Pocket Mint aims to:
 Pocket Mint is NOT:
 
 - an investment platform
-- a budgeting-envelope application
+- a budgeting-envelope application (zero-based allocation of unspent funds across categories, with rollover between them)
 - accounting software
 - an online banking platform
 - a collaborative finance application
 - a multi-currency accounting system
+
+> **Clarification (PD-009, Approved):** Budgeting tracks a fixed monthly spend limit per Category against recorded transactions — it does not allocate, move, or roll over funds between categories, and is therefore distinct from the excluded "budgeting-envelope application" pattern above.
 
 ---
 
@@ -238,6 +240,22 @@ Input:
 
 ---
 
+## Budgeting
+
+Governed by [PD-009](./decisions/009-budgeting-scope.md) (Approved). Phase A (domain foundation — `Budget` model and calculation service) is implemented; API, frontend, dashboard integration, and notifications are not yet implemented.
+
+A Budget is a recurring monthly spending limit for one expense Category, calculated from posted Expense transactions only. Full formulas live in the [Budgeting Calculation Specification](../development/budgeting-calculation-spec.md); scope decisions live in [PD-009](./decisions/009-budgeting-scope.md).
+
+Rules:
+
+- Budget Spent is always calculated live from the Ledger; it is never stored or cached.
+- Only posted Expense transactions in the matching Category count. Transfers, Income, and unconfirmed recurring transactions never count.
+- Budget Status is Healthy (<75%), Approaching (≥75%, <100%), Reached (exactly 100%), Exceeded (>100%), or Archived — evaluated identically by backend and frontend.
+- Budgeting does not allocate, move, or roll over funds between categories; it is distinct from an envelope-budgeting system.
+- One persistent Budget per user and expense Category; archiving does not free the Category for a second Budget — an archived Budget is restored or edited instead.
+
+---
+
 # Business Rules
 
 General rules:
@@ -356,6 +374,12 @@ Planned:
 - n8n Integration
 - WhatsApp Parsing
 - AI Transaction Extraction
+
+Next product phase (active planning, not yet implemented):
+
+- **Budgeting** — per-category monthly spending limits. See [PD-009](./decisions/009-budgeting-scope.md) (Draft), [Budgeting Readiness Audit](../development/budgeting-readiness-audit.md), and [Budgeting Calculation Specification](../development/budgeting-calculation-spec.md).
+
+Roadmap after Budgeting, in order: Analytics v2, Smart Categorization (Merchant Mapping, Rule Engine), Automation, React Native, optional PWA, Dark Mode backlog.
 
 ---
 

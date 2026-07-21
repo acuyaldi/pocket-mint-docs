@@ -1367,3 +1367,346 @@ The User can verify their identity, understand their access relationship, and de
 ## Notes
 
 Profile is about User identity and access context. Product-level preferences belong in Settings.
+
+---
+
+# Budgets
+
+> UX and API contract finalized under Phase A.5 review, governed by [PD-009](./decisions/009-budgeting-scope.md) (Approved). **Backend (Phase B1/B2) and frontend (Phase B3) are implemented** — routes, controllers, and the `app/(app)/anggaran` screens exist in `pocket-mint-be`/`pocket-mint-fe`. Dashboard integration and threshold notifications remain deferred to later phases; Budgeting overall remains in progress, not released. See the [Budgeting API Contract](../development/budgeting-api-contract.md), [Budgeting User Journeys](../development/budgeting-user-journeys.md), and [Phase A.5 Design Review](../development/budgeting-phase-a5-design-review.md).
+
+## Purpose
+
+Give the User one place to see every active Budget, each Category's spending limit, and how close each is to being exceeded this month.
+
+---
+
+## Primary Goal
+
+See which Categories are Healthy, Approaching, or Exceeded at a glance, and open any Budget for detail.
+
+---
+
+## Information Hierarchy
+
+1. Active Budget count and how many are Approaching or Exceeded this Budget Period.
+2. Each Budget: Category, Budget Limit, Budget Spent, Budget Remaining, and Budget Status.
+3. Archived Budgets, shown behind an explicit "Archived" toggle/filter on this same screen — not a separate screen.
+
+---
+
+## Required Data
+
+- User.
+- Active Budgets by default; archived Budgets only when the Archived filter is on.
+- Budget Spent, Budget Remaining, percentage used, and Budget Status per Budget, for the current Budget Period.
+
+---
+
+## User Actions
+
+- Open Create Budget.
+- Open a Budget's detail.
+- Archive an active Budget, or restore an archived Budget.
+- Switch between the active list and the Archived filter.
+
+No Delete action exists on this screen in v1 (see Archive/Delete decision below).
+
+---
+
+## Navigation
+
+Users arrive from the primary navigation. No Dashboard Budget summary exists in v1 (see Dashboard Integration decision below).
+
+Users can continue to Budget Detail, Create Budget, or Edit Budget.
+
+---
+
+## Empty State
+
+When the User has no Budgets, explain that no spending limits are set and direct the User to Create Budget. Do not show a fabricated Budget Status.
+
+---
+
+## Loading State
+
+Identify that Budget figures are being prepared without presenting incomplete percentages as current fact.
+
+---
+
+## Error State
+
+State that Budget information is unavailable, avoid combining Budget Spent from different Reporting Periods, and let the User retry.
+
+---
+
+## Success State
+
+Show every active Budget with an internally consistent Budget Spent, Budget Remaining, and Budget Status for the same Budget Period.
+
+---
+
+## Business Rules
+
+- Follow the Product RFC section **Budgeting** and the [Budgeting Calculation Specification](../development/budgeting-calculation-spec.md).
+- PD-009, **Budgeting Scope and MVP Definition** (Approved), governs every rule on this screen.
+- A Budget Status must use its Canonical Calculation; no screen computes its own percentage or status independently. The Backend returns `status` and `percentUsed` directly — the Frontend never derives them.
+- Exactly one `Budget` row may exist per User per Category, archived or not (PD-009 Decision L). Archiving does not free the Category for a new Budget.
+
+---
+
+## Notes
+
+No overall (all-category) Budget exists in v1; the list shows Category Budgets only. Historical period browsing is out of scope for v1 — this screen always shows the current Budget Period (see [Period and Historical-View Decision](../development/budgeting-phase-a5-design-review.md#11-period-and-historical-view-decision)). Editing a Budget's amount changes the limit used for every future read; it is never retroactive, and this screen must never imply a past period's limit was different.
+
+---
+
+# Budget Detail
+
+## Purpose
+
+Give the User a complete, explainable view of one Budget's current Budget Period.
+
+---
+
+## Primary Goal
+
+Understand exactly how a Budget's Budget Spent was produced and how close it is to its Budget Limit.
+
+---
+
+## Information Hierarchy
+
+1. Category, Budget Limit, Budget Spent, Budget Remaining, percentage used, and Budget Status.
+2. The Budget Period's date range.
+3. The Expense transactions in this Category and Budget Period that make up Budget Spent.
+
+---
+
+## Required Data
+
+- The Budget and its Category.
+- Budget Spent, Budget Remaining, percentage used, and Budget Status for the current Budget Period.
+- The list of Expense transactions contributing to Budget Spent.
+
+---
+
+## User Actions
+
+- Open Edit Budget.
+- Archive the Budget (if active) or restore it (if archived).
+- Open a contributing transaction's detail.
+
+No Delete action exists on this screen in v1 (see Archive/Delete decision below).
+
+---
+
+## Navigation
+
+Users arrive from Budgets or the Dashboard Budget summary.
+
+Users can continue to Edit Budget, Transaction Detail, or back to Budgets.
+
+---
+
+## Empty State
+
+When a Budget has no contributing transactions yet this Budget Period, show Budget Spent as zero with a clear Budget Period and explain that no matching Expense has been recorded.
+
+---
+
+## Loading State
+
+Identify that Budget detail is being prepared without presenting an incomplete transaction list as complete.
+
+---
+
+## Error State
+
+State that Budget detail is unavailable and let the User retry or return to Budgets.
+
+---
+
+## Success State
+
+Show one internally consistent Budget Spent, Budget Remaining, Budget Status, and the exact transactions that explain it.
+
+---
+
+## Business Rules
+
+- Follow the Product RFC section **Budgeting** and the [Budgeting Calculation Specification](../development/budgeting-calculation-spec.md).
+- PD-009 (Approved) governs every rule on this screen.
+- The contributing-transaction list and the Budget Spent figure must be produced by the same Canonical Calculation so they can never disagree. The contributing-transaction list is the existing Transaction List, filtered to this Budget's Category and Budget Period, not a duplicated data source.
+- An installment purchase's contribution reflects its persisted monthly amount, not its Total Obligation.
+
+---
+
+## Notes
+
+This screen never shows a past Budget Period in v1; it always reflects the current one. A separate detail screen is justified specifically by the contributing-transaction list requirement above, not by CRUD convention alone — without it, "why is Budget Spent this number" would be unanswerable from the list screen.
+
+---
+
+# Edit Budget
+
+## Purpose
+
+Let the User change the monthly spending limit of an existing Budget.
+
+---
+
+## Primary Goal
+
+Update a Budget's Budget Limit without disturbing its Category or its current Budget Period's recorded history.
+
+---
+
+## Information Hierarchy
+
+1. Category (read-only, not editable).
+2. Budget Limit amount, pre-filled with the current value.
+
+---
+
+## Required Data
+
+- The existing Budget's Category and current Budget Limit.
+
+---
+
+## User Actions
+
+- Enter a new Budget Limit amount.
+- Confirm the change or cancel.
+
+---
+
+## Navigation
+
+Users arrive from Budget Detail (or the Budgets list). On success or cancel, users return to where they started.
+
+---
+
+## Empty State
+
+Not applicable — this screen always operates on one existing Budget.
+
+---
+
+## Loading State
+
+Disable submission while the request is in progress.
+
+---
+
+## Error State
+
+Show why the update failed, for example an invalid amount, without discarding the User's entered amount.
+
+---
+
+## Success State
+
+Confirm the updated Budget Limit only after the Backend accepts it, then return to Budget Detail showing the recalculated Budget Status for the current Budget Period.
+
+---
+
+## Business Rules
+
+- Budget Limit must be a positive amount.
+- **Category reassignment is not permitted.** The Category field is read-only. See [Archive/Delete and Category Reassignment Decisions](../development/budgeting-phase-a5-design-review.md#10-archivedeletecategory-reassignment-decisions) for the rationale — Budget uniqueness is `(userId, categoryId)`, and reassignment would require re-running the same duplicate check Create Budget already owns, for no validated user need.
+- Editing amount takes effect immediately; the current (and only) Budget Period is recalculated on the next read. No confirmation step, because nothing about a past period is rewritten (PD-009 Decision J).
+- Archiving and restoring are separate actions, not part of this form (see Budget Detail and Budgets).
+
+---
+
+## Notes
+
+To budget a different Category than the one originally chosen, the User archives this Budget and creates a new one for the intended Category, or restores/edits an existing archived Budget for that Category if one exists.
+
+---
+
+# Create Budget
+
+## Purpose
+
+Let the User set a monthly spending limit for one expense Category.
+
+---
+
+## Primary Goal
+
+Create a valid, active Budget for a Category with no existing active Budget.
+
+---
+
+## Information Hierarchy
+
+1. Category selection, limited to the User's expense Categories.
+2. Budget Limit amount.
+3. Preview of the resulting Budget before confirming.
+
+---
+
+## Required Data
+
+- The User's expense Categories.
+- Which Categories already have an active Budget, so they can be excluded or flagged.
+
+---
+
+## User Actions
+
+- Select a Category from the eligible list (expense Categories with no existing Budget row, active or archived).
+- Enter a Budget Limit amount.
+- Confirm creation or cancel.
+
+Presented as a modal opened from Budgets, matching the existing Create Wallet / Create Saving Goal pattern — not a separate page, drawer, or inline flow.
+
+---
+
+## Navigation
+
+Users arrive from Budgets.
+
+On success, users continue to Budget Detail for the new Budget. On cancel, users return to Budgets.
+
+---
+
+## Empty State
+
+When the User has no expense Categories available for a new Budget (all already have an active Budget), explain this and offer no Category selection rather than a broken one.
+
+---
+
+## Loading State
+
+Disable submission and prevent duplicate creation while the request is in progress.
+
+---
+
+## Error State
+
+Show why creation failed, for example an existing active Budget for that Category or an invalid amount, without discarding the User's entered amount.
+
+---
+
+## Success State
+
+Confirm the created Budget only after the Backend accepts it, then continue to Budget Detail.
+
+---
+
+## Business Rules
+
+- Follow the Product RFC section **Budgeting**.
+- PD-009 (Approved) governs every rule on this screen.
+- Budget Limit must be a positive amount.
+- Exactly one `Budget` row (active or archived) may exist per Category (PD-009 Decision L); the Backend is authoritative for this check regardless of the Frontend's eligible-Category filtering.
+- The Category must be an expense Category owned by the requesting User.
+
+---
+
+## Notes
+
+Edit Budget (see above) is a distinct screen/modal, not this same form reused — Create Budget always creates a new row and offers Category selection; Edit Budget always operates on an existing row and never offers Category selection.
