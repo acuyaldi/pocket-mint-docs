@@ -36,6 +36,12 @@ Draft decisions may guide architecture exploration but do not authorize their re
 | [PD-007 — Canonical Transfer Representation](../product/decisions/007-transfer.md) | Draft | Retirement of the separate Transfer model and adoption of a Transaction with a destination wallet as the sole representation. |
 | [PD-008 — Canonical Design Language](../product/decisions/008-design-language.md) | Draft | Canonical colors, typography, financial-number styling, radii, and token normalization. |
 
+### Approved Product Decisions (continued)
+
+| Decision | Status | Implementation consequence |
+|---|---|---|
+| [PD-009 — Budgeting Scope and MVP Definition](../product/decisions/009-budgeting-scope.md) | Approved | Category-level monthly spend-limit tracking, the five-state Budget Status model, one-persistent-Budget-per-category uniqueness, and the notification decision (not yet implemented) may be implemented. Phase A (domain foundation), Phase B1 (command service), and Phase B2 (HTTP API, controllers, routes, DTO mapping) are implemented; frontend, dashboard integration, and notification integration remain pending. |
+
 ### Completed Documentation
 
 - The [Vision](../product/vision.md) defines product purpose, values, boundaries, non-goals, and authority order.
@@ -389,6 +395,84 @@ Introduce bounded probabilistic interpretation only after deterministic financia
 **Risk**
 
 - **High:** private-data disclosure, hallucinated financial facts, opaque mutation, or probabilistic calculations would violate core product values.
+
+### Phase 10 — Budgeting
+
+**Purpose**
+
+Introduce per-category monthly spending limits, calculated dynamically from posted `EXPENSE` transactions, so Users can see how much they may spend, have spent, and have remaining per Category.
+
+**Status**
+
+[PD-009](../product/decisions/009-budgeting-scope.md) is **Approved**. **Phase A (domain foundation) is implemented**: the `Budget` Prisma model and migration, and the backend calculation/query service (`src/services/budget-query.service.ts`, `src/domain/budget.ts`), following the five-state Budget Status model (Decision E) and one-persistent-Budget-per-category uniqueness (Decision L). **Phase A.5 (UX and API contract review) is complete**: the [Budgeting API Contract](./budgeting-api-contract.md), [Budgeting User Journeys](./budgeting-user-journeys.md), and [Phase A.5 Design Review](./budgeting-phase-a5-design-review.md) finalize the implementation-ready design for Phase B, and `screen-spec.md`'s Budgets/Budget Detail/Create Budget/Edit Budget sections were updated from Draft-era language to Approved. **Phase B1 (command service and validation) is implemented**: `src/services/budget.service.ts` (`createBudget`, `updateBudgetAmount`, `archiveBudget`, `restoreBudget`), reusing the existing `BudgetError` class with the API contract's exact codes (`BAD_REQUEST`, `INVALID_AMOUNT`, `CATEGORY_NOT_FOUND`, `CATEGORY_NOT_EXPENSE`, `BUDGET_ALREADY_EXISTS`, `NOT_FOUND`, `ALREADY_ARCHIVED`, `ALREADY_ACTIVE`), with unit tests in `test/budgetService.test.ts`. Category reassignment and delete remain unsupported (no `categoryId` accepted by the update command; no delete command exists).
+
+**Phase B2 (HTTP API, controllers, routes, DTO mapping, and contract tests) is implemented**:
+- Controllers: `src/controllers/budget.controller.ts` — `BudgetController` static class (list, getOne, create, update, archive, restore), composing the command service for mutations and the query service for current-month usage through a single canonical `toBudgetDto` mapper.
+- Routes: `src/routes/budgetRoutes.ts` — mounted at `/api/v1/budgets` in `src/routes/index.ts`, with `requireUser` on all routes and `mutationLimiter` on mutating routes.
+- Endpoints: `GET /api/v1/budgets` (active list, `?status=archived` filter), `GET /api/v1/budgets/:id`, `POST /api/v1/budgets`, `PATCH /api/v1/budgets/:id`, `POST /api/v1/budgets/:id/archive`, `POST /api/v1/budgets/:id/restore`.
+- DTO: `BudgetDto` centralized in `toBudgetDto()` — Decimal → `number`, status backend-computed, period bounds exposed as ISO 8601, category (`id`/`name`/`type`) included via a single Prisma `include` per query.
+- Request validation: `categoryId` rejected with `CATEGORY_NOT_EDITABLE` on PATCH; `status` query param validated to `"active"`|`"archived"`; body fields are allowlisted (no spread); business validation stays in `budget.service.ts`.
+- Error mapping: `BudgetError` forwarded through `forwardError` (structural `isOperational` recognition); `NOT_FOUND` covers both missing and cross-user; `CATEGORY_NOT_FOUND` covers both missing and cross-user categories; raw Prisma P2002 never reaches the client.
+- Tests: `test/budgetController.test.ts` (111 boundary tests covering auth, CRUD, DTO serialization, error forwarding, DTO contract); integration tests added to `test/prismaAdapter.integration.test.ts` (command-service P2002 translation, full acceptance path: create→list→spend→verify→update→archive→verify absent→restore→verify active).
+- No schema changes, no new migrations, no new dependencies, no frontend changes.
+
+**Phase B3 (frontend screens, forms, navigation, and API integration) is implemented** in `pocket-mint-fe`:
+- Types/API/hooks: `src/types/budget.ts` (`BudgetDto` mirror, backend status union, `isArchived` kept authoritative), `src/features/budgets/hooks/useBudgets.ts` (`useBudgets`, `useBudget`, `useCreateBudget`, `useUpdateBudget`, `useArchiveBudget`, `useRestoreBudget`; pessimistic mutations; `invalidateBudgetDependents` invalidates `['budgets']` only — corrected in Phase B4, see below). `useTransactions.ts`'s `invalidateTransactionDependents` now also invalidates `['budgets']`.
+- Routes: `app/(app)/anggaran/page.tsx` (Budgets — active/archived toggle on one screen) and `app/(app)/anggaran/[id]/page.tsx` (Budget Detail — figures plus the contributing-transaction list, derived client-side from the existing `useTransactions()` current-month hook filtered by `categoryId`, not a new endpoint). Create and Edit are modals (`CreateBudgetModal`, `EditBudgetModal`), matching the finalized Phase A.5 UX decision; Archive/Restore are confirmation modals (`ArchiveBudgetModal`, `RestoreBudgetModal`).
+- Navigation: Budgets added as the 7th entry to both `app-sidebar.tsx` and `bottom-nav.tsx` (icon: `Gauge`), matching the design review's acknowledged existing 6-item deviation from the 5-label canon.
+- Status/progress: centralized `BudgetStatusPill`/`BudgetProgressBar` — label and status always backend-computed (`status` field, never derived from `percentUsed`); progress bar visual width and `aria-valuenow` are capped at 100 (an ARIA range fix made in Phase B4 — `aria-valuenow` above `aria-valuemax` is invalid), while the true unrounded `percentUsed`, including values above 100, is exposed via `aria-valuetext` and the on-screen percentage text.
+- Errors: `budgets.errors.*` localization keys keyed on the backend's stable `code` (`BAD_REQUEST`, `INVALID_AMOUNT`, `CATEGORY_NOT_FOUND`, `CATEGORY_NOT_EXPENSE`, `CATEGORY_NOT_EDITABLE`, `BUDGET_ALREADY_EXISTS`, `NOT_FOUND`, `ALREADY_ARCHIVED`, `ALREADY_ACTIVE`), never the English message string.
+- Localization: `nav.budgets`, `budgets.*`, `budgetModals.*`, `budgetDetail.*` added to both `messages/en.json` and `messages/id.json`, key-parity verified by the existing `tests/i18n.test.ts`.
+- Tests: `tests/budgets.test.ts` (source-contract assertions only — `readFileSync` + string-marker checks under a `node` vitest environment; this repo has no `@testing-library`/jsdom installed, so nothing here renders a component or simulates interaction) plus the full existing suite and `tsc --noEmit`/`next build` all green.
+- Not implemented (deferred per task scope): dashboard Budget summary slot, notification/threshold UI, historical period browsing, delete, category reassignment, a new Playwright E2E spec (no Playwright test-runner config exists yet in this repo — only ad-hoc screenshot scripts — so no new E2E harness was introduced for this feature alone).
+
+**Phase B4 (database integration verification, live UI QA, and release stabilization) is partially implemented** — see [Budgeting Readiness Audit](./budgeting-readiness-audit.md#phase-b4-verification-2026-07-21) for the full account. Summary:
+- Backend CI (`pocket-mint-be/.github/workflows/ci.yml`) now runs a `postgres:18` service container, applies `prisma migrate deploy`, and runs the full `vitest run` (including the previously-never-executed Prisma/Budget integration suite) — this had never actually run against a real database in CI before B4, despite `docs/database-testing.md` describing it as already wired up.
+- The same integration suite (32 tests) was run locally against a disposable `embedded-postgres` instance and passed, including duplicate-active/duplicate-archived Budget rejection, P2002 → `BUDGET_ALREADY_EXISTS` translation, ownership isolation, and cascade delete. The GitHub Actions run itself remains pending until this branch/PR actually executes in CI.
+- Fixed: `invalidateBudgetDependents` was invalidating `['dashboard']` even though the Dashboard reads no budget data — removed the speculative coupling; it now invalidates `['budgets']` only.
+- Fixed: `BudgetProgressBar`'s `aria-valuenow` could exceed `aria-valuemax` (invalid ARIA range) for exceeded budgets — it's now capped at 100, with the true percentage exposed via `aria-valuetext`.
+- Audited: the Budget Detail contributing-transaction list. `useTransactions()` applies no `limit`/pagination parameter and is scoped to the same Asia/Jakarta reporting-month range (`getReportingMonthRange`) the Budget's own `periodStart`/`periodEnd` come from — so the client-side category filter yields the complete per-period set, not a truncated batch. Copy ("Transactions this period" / "Transaksi periode ini") was already honestly scoped and needed no change.
+- Live-browser/manual UI verification was performed in a later session (Phase B5, below) — the B4-era gap noted here is closed.
+
+**Phase B5 (authenticated browser QA) is complete.** Desktop (1440×900), tablet (768×1024), and mobile (390×844, 375×812) QA passed for the full authenticated Budget flow (create, spend, recalculate, edit, archive, restore). Runtime request payloads matched the approved API contract, and accessibility verification passed for progress values above 100%. Two defects were found during this pass and are tracked/fixed separately from Budgeting scope (see Phase B6): a duplicate-DOM-id bug in the shared `FormField` component, and a missing app-wide route guard that let anonymous sessions reach the authenticated shell.
+
+**Phase B6 (release closure and route-guard hardening) — this session (2026-07-21).** Scope was deliberately split from Budgeting: the route guard is an app-wide prerequisite fix, not Budget functionality, and is prepared as an independently reviewable change.
+
+- Root cause of the missing route guard: `lib/supabase/middleware.ts` (invoked via `proxy.ts` — Next.js 16 renamed `middleware.ts` to `proxy.ts`; the proxy **was** running) used a hardcoded `protectedRoutes` allow-list that was never extended for newer routes. `/anggaran`, `/cicilan`, `/target-tabungan`, and `/notifications` were absent from it, so anonymous requests to those paths were never redirected. Fixed by inverting the check to a small public-path allow-list (`/`, `/login`, `/changelog`, `/auth/*`) with every other route protected by default, so a new `(app)` route is protected automatically instead of requiring a manual addition.
+- The guard already used `supabase.auth.getUser()` (server-verified), not `getSession()`, and already ran at the proxy layer before rendering — no double client-side guard was added.
+- No return-path/redirect-query parameter exists or was introduced; the anonymous redirect target is always `/login` (YAGNI — this fix scope did not need one).
+- Regression coverage added: `tests/route-guard.test.ts` (behavioral — invokes the real `updateSession` function against a mocked Supabase client and a real `NextRequest`, covering anonymous-redirect, authenticated-passthrough, public-route-passthrough, and no-redirect-loop cases across the full route matrix) and `tests/private-route-auth.test.ts` was rewritten from asserting the old hardcoded list to asserting the new allow-list shape and rejecting a regression back to a hardcoded list.
+- `components/ui/form-field.tsx`'s existing duplicate-id guard (skip cloning `id`/`aria-*` onto a plain layout `<div>` child) was verified against all 10 `FormField` usages in the frontend; every non-`<div>` child is a native `<input>`/`MoneyInput`/`Select`, so the guard does not suppress `aria-invalid`/`aria-describedby` propagation anywhere else. Added `tests/form-field-id.test.ts`, a behavioral test via `react-dom/server`'s `renderToStaticMarkup` (no new dependency — `react-dom` is already installed), which actually renders the component and parses the HTML output, unlike the source-contract convention used elsewhere in this suite.
+- Full local validation passed: backend `prisma validate`, `tsc --noEmit`, `vitest run` (642 passed, 32 integration tests correctly skipped without `TEST_DATABASE_URL`), `npm run build`; frontend `vitest run` (530 passed), `tsc --noEmit`, `eslint .` (no issues), `npm run build`.
+- Not performed this session: an actual GitHub Actions run of the backend CI Postgres integration gate (requires a real push/PR), and disposable-Postgres integration re-run locally (no Docker/local Postgres available in this environment — no backend source was changed this session, so no regression risk was introduced to the integration-tested paths).
+
+Budgeting is **CONDITIONALLY READY**, not release-verified — it remains gated on an actual GitHub Actions run of the Postgres integration workflow. Historical periods, delete, category reassignment, the dashboard summary slot, and threshold notifications remain deferred by product decision/task scope, not by omission.
+
+**Repositories**
+
+- `pocket-mint-docs` owns [PD-009](../product/decisions/009-budgeting-scope.md) (Approved), the [Budgeting Readiness Audit](./budgeting-readiness-audit.md), the [Budgeting Calculation Specification](./budgeting-calculation-spec.md), and the reworded Non-Goals language (synchronized in `product-rfc.md` and `vision.md`).
+- `pocket-mint-be` owns the `Budget` model and migration (done, Phase A), the calculation/query service (done, Phase A), the command service and validation (done, Phase B1 — `src/services/budget.service.ts`), and the HTTP API layer (done, Phase B2 — `src/controllers/budget.controller.ts`, `src/routes/budgetRoutes.ts`). Remaining: B3 (frontend screens and navigation), and — in a later, separately scoped phase — the `BudgetThresholdEvent` model and threshold evaluation (PD-009 Decision F), which must not fail or roll back a valid transaction mutation.
+- `pocket-mint-fe` owns the Budgets navigation entry, list/detail/create/edit screens (done, Phase B3), and — in later, separately scoped phases — the dashboard summary slot and threshold notification presentation.
+
+**Dependencies**
+
+- Phases 1 through 4 (Financial Core, Authentication, Wallet Engine, Transaction and Transfer Engine) for a stable, User-scoped `Category` and `Transaction` model.
+- [PD-009](../product/decisions/009-budgeting-scope.md) approval, including its specific reworded Non-Goals text — satisfied.
+
+**Blocked By**
+
+- Nothing for Phase A, Phase B1, or Phase B2 (all complete). Phase B3 (frontend) is not blocked by any open Product Decision, only by scheduling.
+- The notification-integration phase (Decision F) requires its own explicit review of the failure-isolation requirement before implementation.
+
+**Enables**
+
+- A Budget-aware Dashboard summary section (pending Phase B/frontend).
+- A foundation for a later overall (all-category) budget, if validated.
+- A category-scoped aggregation query (`budget-query.service.ts`'s grouped `transaction.groupBy`) that Analytics v2 may also reuse.
+
+**Risk**
+
+- **Medium:** the installment `monthlyAmount` vs `grandTotal` nuance must be applied identically in every consumer or budget figures will silently disagree with the Dashboard's existing monthly summary — `budget-query.service.ts` reads the persisted `Transaction.amount` as-is, consistent with `transaction-query.service.ts`'s `getSummary`, so this is satisfied for Phase A.
 
 ### Phase 9 — UX Polish and Design-System Convergence
 

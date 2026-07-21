@@ -58,6 +58,7 @@ Read only the minimum relevant context, then follow links when the task exposes 
 | Installment | [Product RFC](../product/product-rfc.md), [Glossary](../product/glossary.md), [PD-001](../product/decisions/001-net-worth.md), [PD-003](../product/decisions/003-installment-lifecycle.md), [PD-004](../product/decisions/004-installment-fees.md) |
 | Transfer | [Product RFC](../product/product-rfc.md), [Glossary](../product/glossary.md), [System Architecture](../architecture/system-architecture.md), [PD-007](../product/decisions/007-transfer.md) |
 | Reporting | [Product RFC](../product/product-rfc.md), [Glossary](../product/glossary.md), [PD-001](../product/decisions/001-net-worth.md), [PD-006](../product/decisions/006-reporting.md), [Screen Specification](../product/screen-spec.md) |
+| Budgeting | [Product RFC](../product/product-rfc.md#budgeting), [Glossary](../product/glossary.md), [PD-009](../product/decisions/009-budgeting-scope.md), [Budgeting Readiness Audit](../development/budgeting-readiness-audit.md), [Budgeting Calculation Specification](../development/budgeting-calculation-spec.md), [Screen Specification](../product/screen-spec.md#budgets) |
 | Automation | [Product RFC](../product/product-rfc.md), [System Architecture](../architecture/system-architecture.md), relevant Product Decisions and repository guidance |
 | AI integration | [Vision](../product/vision.md), [System Architecture](../architecture/system-architecture.md), [Glossary](../product/glossary.md), relevant Product Decisions |
 | Documentation change | [Vision](../product/vision.md), the documents above the target in the authority order, relevant Product Decisions, [Reconciliation Report](../development/reconciliation-report.md) when implementation evidence matters |
@@ -99,8 +100,9 @@ The following Product Decisions are **Draft**. Their recommendations may guide e
 | [PD-006 — Financial Reporting Surface](../product/decisions/006-reporting.md) | Dedicated Reports surface, report scope, navigation, and historical presentation |
 | [PD-007 — Canonical Transfer Representation](../product/decisions/007-transfer.md) | Whether a Transfer is represented by a Financial Event with a destination wallet or a separate entity |
 | [PD-008 — Canonical Design Language](../product/decisions/008-design-language.md) | Light-only design, color semantics, typography, financial-number styling, tokens, and radii |
+| [PD-009 — Budgeting Scope and MVP Definition](../product/decisions/009-budgeting-scope.md) | Whether Budgeting exists at all, its category-only scope, calendar-month period, spend basis, status thresholds, notification policy, rollover exclusion, and the reworded Non-Goals text it depends on |
 
-PD-001 and PD-002 are Approved. PD-003 through PD-008 are Draft as of this document's creation. Always check current decision front matter before relying on status.
+PD-001 and PD-002 are Approved. PD-003 through PD-009 are Draft as of this document's creation. Always check current decision front matter before relying on status.
 
 ---
 

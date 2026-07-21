@@ -15,11 +15,15 @@ Shared product and architecture documentation for Pocket Mint.
 
 ## Planned Documentation
 
-- Screen specification
 - Component specification
 - User flows
-- System architecture
-- Implementation reconciliation report
+
+## Active Planning — Budgeting (next product phase, Draft)
+
+- [Budgeting Readiness Audit](docs/development/budgeting-readiness-audit.md)
+- [PD-009 — Budgeting Scope and MVP Definition](docs/product/decisions/009-budgeting-scope.md)
+- [Budgeting Calculation Specification](docs/development/budgeting-calculation-spec.md)
+- Budget screens in [Screen Specification](docs/product/screen-spec.md#budgets)
 
 ## Source-of-truth rules
 

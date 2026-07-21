@@ -123,7 +123,7 @@ Pocket Mint will intentionally never become:
 - An online bank or payment provider.
 - Accounting software for businesses or regulated reporting.
 - A stock, investment, or cryptocurrency trading platform.
-- A budgeting-envelope system.
+- A budgeting-envelope system: zero-based allocation of unspent funds across categories, with rollover between them. (Category-level monthly spend-limit tracking against recorded transactions — Budgeting, [PD-009](./decisions/009-budgeting-scope.md), Approved — is a distinct, narrower feature: it never allocates, moves, or rolls over funds between categories.)
 - A lending or credit-underwriting service.
 - A financial adviser that prescribes decisions.
 - A social, competitive, or public finance application.
