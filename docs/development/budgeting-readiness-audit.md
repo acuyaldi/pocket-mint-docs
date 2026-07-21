@@ -247,7 +247,9 @@ Two defects surfaced during this pass, **neither of them Budgeting-specific**, a
 All four workstreams from Phase B6 were isolated into their own clean
 worktrees off the current `origin/dev` (frontend/backend) or `origin/main`
 (docs — this repository has no `dev` branch), pushed, and opened as separate,
-independently reviewable PRs. None were merged.
+independently reviewable PRs. The auth-route, backend Budgeting, and frontend
+Budgeting PRs have since been merged to `dev` (this document records that
+merge below); this docs PR is the last of the four to merge.
 
 - **`fix/protect-app-routes`** → `pocket-mint-frontend` PR #49 — route-guard
   fix only. Anonymous-context browser smoke test re-run against a live local
@@ -290,11 +292,51 @@ independently reviewable PRs. None were merged.
 condition that kept Budgeting at CONDITIONALLY READY in Phase B6 — an
 unobserved GitHub Actions Postgres run — has been satisfied: the real run on
 the backend PR is green, with the integration suite confirmed executed
-(not skipped) and an exact passing count recorded above. Remaining before an
-actual release: review and merge the four PRs above (auth-route PR and
-backend Budgeting PR should merge before the frontend Budgeting PR merges,
-since the latter depends on both `/anggaran` being guarded and `/v1/budgets`
-existing), and an authenticated-context browser re-verification with real
-credentials at whatever point real credentials become available — the
-mocked behavioral test coverage is a substitute, not a replacement, for that
-verification.
+(not skipped) and an exact passing count recorded above.
+
+## Phase B8 — Merge to `dev` and Post-Merge Validation (2026-07-21)
+
+All three implementation PRs merged to `dev`, in the required order (auth
+route guard and backend Budgeting API before the frontend Budgeting PR that
+depends on both), each with a standard merge commit and green checks at
+merge time:
+
+- `pocket-mint-frontend` PR #49 (route-guard fix) → merged to `dev`,
+  commit `94d92f7b`.
+- `pocket-mint-backend` PR #59 (Budget domain/API) → merged to `dev`,
+  commit `74e26db1`. The merged CI run (`29847807971`) matched the PR's
+  head SHA at merge time; no new run was required.
+- `pocket-mint-frontend` PR #50 (Budgeting UI) → updated against `dev`
+  post-auth-merge via a non-destructive merge commit (no rebase, no force
+  push), revalidated (typecheck, ESLint, i18n parity, full Vitest, build all
+  green on the combined state), then merged to `dev`, commit `dc38f1ef`.
+
+Post-merge validation on the resulting `dev` branches:
+
+- Backend `dev`: `prisma validate` ✅, `tsc --noEmit` ✅, `vitest run` —
+  642/642 unit tests passed; the 32 Postgres integration tests could not be
+  re-run locally (no Docker/local Postgres in this environment) but were
+  already confirmed 674/674 (including these 32) against a real disposable
+  Postgres in CI run `29847807971` on the exact merged head. `npm run build`
+  ✅, `git diff --check` ✅.
+- Frontend `dev`: `tsc --noEmit` ✅, `eslint .` ✅, i18n EN/ID key parity ✅,
+  `npm run build` ✅ (`/anggaran`, `/anggaran/[id]`, and `Proxy (Middleware)`
+  all present in the route output), `git diff --check` ✅. `vitest run` —
+  528/530 passed; the 2 failures are a local Windows `core.autocrlf`
+  checkout artifact in a source-text-matching test (CRLF vs the LF the test
+  literal expects), not a real regression — the same suite passed in this
+  PR's own CI run (Linux/LF) after the merge.
+- A live backend+frontend integration smoke test (server start, login,
+  `/anggaran` data fetch) was not performed: it requires real Supabase
+  credentials, which are not safely available in this environment — same
+  constraint as the authenticated browser re-verification below. This
+  remains a pre-release/deployment verification item, not fabricated as
+  passed.
+
+Remaining before an actual release: merge this docs PR, then an
+authenticated-context browser re-verification with real credentials at
+whatever point real credentials become available — the mocked behavioral
+test coverage (`route-guard.test.ts`) is a substitute, not a replacement,
+for that verification. Production deployment (Railway/Vercel) and the
+production Prisma migration have **not** been performed and are not in
+scope of this document.
