@@ -46,13 +46,15 @@ The current architecture is designed for extension:
 
 ```
 User input (description)
+  → [Rule Engine] (Phase 20, future — highest priority)
   → MerchantNormalizer (Phase 18)
   → [Merchant Alias Lookup] (Phase 19, future)
   → KeywordMatcher (Phase 18)
-  → [Rule Engine] (Phase 20, future — highest priority)
   → ConfidenceCalculator (Phase 18)
   → Ranked suggestions
 ```
+
+> **Correction (2026-07-22, [PD-012](./012-rule-engine.md)):** this diagram originally placed `[Rule Engine]` between `KeywordMatcher` and `ConfidenceCalculator` — a copy-paste error that contradicted this document's own prose below ("user rules override both") and PD-011's. Rule Engine runs **first**, as shown above. See PD-012 for the corrected pipeline and rationale.
 
 Each stage is a pure function with no side effects. Adding a stage means inserting a call in the pipeline — no existing code is rewritten.
 
