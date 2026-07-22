@@ -199,3 +199,4 @@ An oversized first release could delay useful reporting. Incomplete historical d
 | Date | Status | Notes |
 |------|--------|------|
 | 2026-07-14 | Draft | Initial creation |
+| 2026-07-22 | Draft | Analytics v2 implemented in `pocket-mint-be`/`pocket-mint-fe` (branches `feature/analytics-v2`, PRs open against `dev`). The product's operative term is "Analytics" (route `/analytics`, i18n namespace `"analytics"`, EN "Analytics" / ID "Analitik"), satisfying PD-006's intent of a dedicated reporting destination separate from the Dashboard. See [ADR-010](./010-analytics-v2-architecture.md) for the terminology reconciliation and architecture decision. Status left at Draft pending product-owner review of the Analytics vs Reports terminology. |

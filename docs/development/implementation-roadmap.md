@@ -475,6 +475,46 @@ Budgeting is **CONDITIONALLY READY**, not release-verified — it remains gated 
 
 - **Medium:** the installment `monthlyAmount` vs `grandTotal` nuance must be applied identically in every consumer or budget figures will silently disagree with the Dashboard's existing monthly summary — `budget-query.service.ts` reads the persisted `Transaction.amount` as-is, consistent with `transaction-query.service.ts`'s `getSummary`, so this is satisfied for Phase A.
 
+### Phase 11 — Analytics v2
+
+**Purpose**
+
+Upgrade Pocket Mint's existing analytics and reporting capability into a reliable, useful, explainable, and reusable Analytics v2 experience: backend-authoritative aggregation (not client-side full-transaction-dump computation), period-scoped overview with previous-period comparison, contiguous trend bucketing, category and wallet breakdowns, budget performance reuse, and transaction drill-down — all governed by one documented metric policy.
+
+**Status**
+
+**Backend is implemented** (`pocket-mint-be`, branch `feature/analytics-v2`, PR [#61](https://github.com/acuyaldi/pocket-mint-backend/pull/61) open against `dev`, not merged): a dedicated `analytics` module with internal separation for period resolution (`src/domain/analyticsPeriod.ts`, built on `reportingTime.ts`), metric aggregation (`src/services/analytics-*.service.ts`), validation (`src/services/analytics-period.ts`, `src/services/analytics.errors.ts`), response mapping (`src/controllers/analytics.controller.ts`), and routes (`src/routes/analyticsRoutes.ts`, mounted at `/api/v1/analytics`). Six endpoints: overview (with previous-period comparison and zero-baseline `{ value: null, reason: "ZERO_BASELINE" }` handling), trends (daily/monthly bucketing, zero-filled), categories (by type, explicit Uncategorized group), wallets (per-wallet income/expense/net), budget-performance (verbatim `budgetQueryService.listActiveBudgetUsage` reuse — numerically identical to `GET /budgets`), and transactions (drill-down, paginated, capped at 200/page, reusing the canonical transaction shape). All endpoints are `requireUser`-gated, scoped to the authenticated user. No new migration; the existing `[userId, date]` and `[walletId, date]` indexes were confirmed sufficient by `EXPLAIN ANALYZE` against a 100k-row seeded dataset (sub-2ms, no sequential scans). Full test suite: 712 unit/boundary tests + 42 integration tests (real Postgres) covering Decimal precision, cross-user isolation, uncategorized handling, transfer exclusion, zero-baseline percentage, half-open date boundaries, and budget-performance numeric agreement with `GET /budgets`.
+
+**Frontend is implemented** (`pocket-mint-fe`, branch `feature/analytics-v2`, PR open against `dev`, not merged): the existing `/analytics` page is rewired from client-side full-transaction-dump computation (`useAllTransactions` + `buildMonthlyFlow`/`filterTransactionsByPeriod`) to backend-authoritative aggregation via dedicated `useAnalytics*` TanStack Query hooks (`src/features/analytics/hooks/useAnalytics.ts`). Period state is URL-persisted via `parseAnalyticsSearchParams`/`serializeAnalyticsSearchParams` (`src/features/analytics/period.ts`). A single chart library was added: Recharts 3.10.0, used for the cash-flow trend (`CashFlowTrend` — ComposedChart with income/expense bars and net line), category breakdown (`CategoryBreakdown` — horizontal bar chart with accessible data table), and wallet breakdown (`WalletBreakdown` — semantic HTML table, no chart). Every chart has an accessible non-color-only fallback (screen-reader summaries and/or accessible data tables in the DOM). The period selector supports six presets plus a custom date range (`AnalyticsPeriodSelector`), all with native `<input type="date">` inputs. Overview cards (`AnalyticsSummaryCard`) display income/expense/net/transaction-count with previous-period comparison and explicit "no comparison" state for zero-baseline percentage. Budget performance reuses `BudgetStatusPill`/`BudgetProgressBar` from `app/(app)/anggaran/components/` for visual consistency. Transaction drill-down (`TransactionDrillDown`) is a paginated table with type-filter, category-filter, and wallet-filter support. The i18n `"analytics"` namespace in both `en.json`/`id.json` was replaced with new keys for period-selector, overview, trends, categories, wallets, budget-performance, and drill-down sections — no hardcoded strings. Storybook build passes; source-contract tests updated to check for the new hooks and export patterns rather than the old `useAllTransactions`/client-side computation. The existing CSV export button is preserved, mapped from the new period presets to the prior export endpoint's values where compatible.
+
+**Docs is implemented** (`pocket-mint-docs`, branch `feature/analytics-v2`, not merged): [Analytics v2 Calculation Specification](./analytics-v2-calculation-spec.md) (metric definitions, period/timezone policy, previous-period comparison rules, zero-baseline policy, trend bucketing, budget performance reuse policy, known limitations), [Analytics v2 API Contract](./analytics-v2-api-contract.md) (endpoint contracts, auth, error codes, response shapes), and [ADR-010 — Analytics v2 Architecture](../product/decisions/010-analytics-v2-architecture.md) (decision: live aggregation from canonical Ledger facts; terminology reconciliation between "Analytics" and PD-006's "Reports"). PD-006's History table updated with a dated entry noting the implementation.
+
+**Repositories**
+
+- `pocket-mint-be` owns the Analytics v2 module (`src/domain/analyticsPeriod.ts`, `src/services/analytics-*.service.ts`, `src/services/analytics.errors.ts`, `src/controllers/analytics.controller.ts`, `src/routes/analyticsRoutes.ts`) and its tests (unit + integration + isolation).
+- `pocket-mint-fe` owns the rewired `/analytics` page (`app/(app)/analytics/page.tsx`), its components (`components/AnalyticsPeriodSelector.tsx`, `AnalyticsSummaryCard.tsx`, `CashFlowTrend.tsx`, `CategoryBreakdown.tsx`, `WalletBreakdown.tsx`, `BudgetPerformance.tsx`, `TransactionDrillDown.tsx`), the analytics hooks and types (`src/features/analytics/`, `src/types/analytics.ts`), and the Recharts 3.10.0 dependency.
+- `pocket-mint-docs` owns [ADR-010](../product/decisions/010-analytics-v2-architecture.md), the [Calculation Specification](./analytics-v2-calculation-spec.md), and the [API Contract](./analytics-v2-api-contract.md).
+
+**Dependencies**
+
+- Phases 1–5 (Financial Core, Authentication, Wallet Engine, Transaction Engine, Installment Engine) for the canonical `Transaction`/`Category`/`Wallet`/`Budget` models and `reportingTime.ts` primitives.
+- Phase 10 (Budgeting) for the `computeBudgetUsage` pure function and `budgetQueryService.listActiveBudgetUsage` that Analytics v2's budget-performance endpoint reuses verbatim.
+
+**Blocked By**
+
+- Nothing. All prerequisite phases and product decisions are complete.
+
+**Enables**
+
+- A consistent, documented, and test-verified metric policy that all future features (Smart Categorization, Rule Engine, Automation) can consume through the same `/api/v1/analytics` contracts.
+- A drill-down pathway from any metric to its constituent transactions.
+- A single chart library (Recharts) with established accessible-fallback patterns usable by other product areas.
+
+**Risk**
+
+- **Low:** aggregation latency at very large per-user transaction volumes. Existing indexes confirmed sufficient; a targeted `[userId, type, date]` composite index and/or materialized-view evaluation is gated behind a measured production threshold (~500k rows per user, p95 >500ms for the overview endpoint), not a speculative pre-build.
+- **Low:** Recharts dependency. The accessible data-table fallback for every chart ensures no information is lost during any migration period.
+
 ### Phase 9 — UX Polish and Design-System Convergence
 
 **Purpose**
