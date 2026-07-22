@@ -531,8 +531,8 @@ Build the conversational Assistant boundary defined in [Assistant Core Architect
 
 - **21.1 — Documentation and Contracts:** ADR (complete), canonical Assistant types, initial tool contract, risk/confirmation enums, lifecycle state definitions. ✅ **Complete.** Module at `src/assistant/` in `pocket-mint-be`. Canonical contracts: `ToolContract`, `ExecutionContext`, `PolicyResult`, `ToolRegistry`, `evaluatePolicy`. First tool: `analytics.monthly-spending-summary` (LOW risk, read-only, no confirmation). Validation via minimal internal validators (no Zod/Joi — compatible with adopting them later).
 - **21.2 — Read-Only Assistant Foundation:** ✅ **Implemented.** Provider-neutral canonical request/response, correlation ID middleware, deterministic intent resolver, consolidated executor/tool-router, tool handler wired to existing `transactionQueryService` + `analyticsCategoriesService`, deterministic Indonesian response renderer, HTTP endpoint `POST /v1/assistant/execute`, structured audit logging via existing logger. **No LLM provider integrated.** Conversation persistence and draft persistence remain deferred. Durable audit persistence remains deferred.
-- **21.3 — Conversation Persistence:** conversation, message, and tool-execution records; expiration and cleanup.
-- **21.4 — First Financial Draft Flow:** `transaction.create` draft → preview → confirm → commit through the existing transaction service, with idempotency and audit history.
+- **21.3 — Conversation Persistence:** ✅ **Implemented.** User-owned conversations, canonical messages with source provenance, explicit request turns, minimized durable tool-execution history, bounded ownership-scoped retrieval, and idempotent archive. Automatic expiration and permanent deletion remain deferred pending an approved retention policy.
+- **21.4 — First Financial Draft Flow:** **Next.** `transaction.create` draft → preview → confirm → commit through the existing transaction service, with idempotency and audit history.
 - **21.5 — Bounded Multi-Tool Workflows:** added only after 21.2–21.4 are stable.
 - **21.6 — Proactive Domain-Event Workflows:** deferred until conversational request/response behavior is production-ready.
 
@@ -558,7 +558,7 @@ Build the conversational Assistant boundary defined in [Assistant Core Architect
 
 - **Risk-policy mapping:** `evaluatePolicy` now maps by `confirmationPolicy` rather than inferring from `riskLevel` alone. HIGH risk defaults to EXPLICIT (draft + confirm), not STEP_UP. STEP_UP is an optional strengthening available to any tier. VERY_HIGH always maps to UNAVAILABLE in v1.
 - **Registry invariants:** MEDIUM and HIGH both require at least EXPLICIT. HIGH no longer requires STEP_UP. VERY_HIGH requires DISABLED.
-- **Removed `_context` parameter from `evaluatePolicy`** — unused in the current deterministic implementation; will be reintroduced with Preference memory (Phase 21.3).
+- **Removed `_context` parameter from `evaluatePolicy`** — unused in the current deterministic implementation; preference memory remains deferred beyond Phase 21.3.
 - **Money representation:** Tool boundary uses `number` via `Number(decimal.toString())`, matching the existing controller convention. No financial arithmetic is performed with JS numbers inside Assistant Core.
 
 ### Phase 21.2 Implementation Note (2026-07-22)

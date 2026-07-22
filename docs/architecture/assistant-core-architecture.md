@@ -2,7 +2,7 @@
 
 ## 1. Status
 
-Approved for architecture. Phases 21.1 (Documentation and Contracts) and 21.2 (Read-Only Assistant Foundation) are implemented. Phase 21.3 (Conversation Persistence) has not started. This document supersedes the informal "AI Assistant" description in [System Architecture](./system-architecture.md#ai-assistant) as the single source of truth for Assistant Core. That section now points here instead of describing the boundary independently.
+Approved for architecture. Phases 21.1 (Documentation and Contracts), 21.2 (Read-Only Assistant Foundation), and 21.3 (Conversation Persistence) are implemented. This document supersedes the informal "AI Assistant" description in [System Architecture](./system-architecture.md#ai-assistant) as the single source of truth for Assistant Core. That section now points here instead of describing the boundary independently.
 
 ---
 
@@ -349,8 +349,20 @@ Phase 21.1 and 21.2 are implemented in `pocket-mint-be`:
 - **Deterministic renderer:** Indonesian text output
 - **LLM provider:** Not yet integrated
 - **Durable audit persistence:** Deferred (per ADR §17 — structured logs only)
-- **Conversation persistence:** Deferred (Phase 21.3)
+- **Conversation persistence:** Implemented (Phase 21.3)
 - **Draft/commit flow:** Deferred (Phase 21.4)
+
+### Phase 21.3 Persistence Decision (2026-07-22)
+
+Assistant persistence uses four provider-neutral relational records: an owned `AssistantConversation`, one `AssistantTurn` per canonical request, canonical `AssistantMessage` rows, and separate `AssistantToolExecution` audit rows. Ownership is enforced inside the conversation service with authenticated `userId`; unknown and cross-user IDs are indistinguishable.
+
+Every persisted USER message has content, but `message` remains optional on execute requests. Whitespace-only input is absent. Original text is marked `USER_PROVIDED`; a deterministic fallback is generated only from validated arguments; rejected requests store a constant safe summary rather than raw invalid JSON. Retrieval exposes plain-text `content` and `source`. HTML, provider-native roles and payloads, hidden reasoning, request/auth objects, stack traces, and unrestricted tool results are never canonical records.
+
+Turns follow `PENDING → RUNNING → SUCCEEDED|FAILED`, with `REJECTED` for handled validation/policy rejection. Tool records independently preserve terminal success, failure, timeout, or denial. Initial persistence failure prevents finance execution. Tool execution occurs outside database transactions; short transactions create the request records and finalize the response. A crash after the read and before finalization may leave inspectable `RUNNING` records; the current tool is read-only, and automated stale-turn recovery is deferred.
+
+For the monthly summary, durable input is only `{ month }`; output audit data is only `{ month, transactionCount, categoryCount }`. Rendered assistant text is a historical snapshot of what the user saw and never replaces finance-domain truth.
+
+Archival is ownership-scoped and idempotent. Automatic expiration, permanent deletion, and cleanup jobs are deferred until a retention policy is approved. The schema retains timestamps needed for that future policy.
 
 ### Usage Example
 
@@ -428,7 +440,7 @@ None of the following block starting Phase 21.1 or 21.2; they must be resolved b
 
 - Which specific analytics/read tool is the first vertical slice built against (blocks 21.2 tool selection, not the boundary itself).
 - Draft expiry duration and cleanup cadence (blocks 21.4 commit behavior).
-- Whether preference memory is persisted per-User or per-conversation for v1 (blocks 21.3 schema, not the boundary).
+- Whether preference memory is persisted per-User or per-conversation in a future phase (it is not part of the Phase 21.3 schema).
 - Exact allow-listed event set for §16/21.6 (blocks 21.6 only).
 
 ---
