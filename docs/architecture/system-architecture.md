@@ -331,7 +331,7 @@ A Notification Service consumes committed outcomes and approved reminder signals
 
 An AI Assistant combines a conversational Frontend with a backend-owned coordination boundary. It may query authorized, minimized read models and explain backend-provided calculations. Any proposed mutation is structured, validated, shown with its consequence, and confirmed according to product policy before Business Services commit it. The assistant cannot answer missing-history questions by inventing records or present general model output as financial advice or canonical truth.
 
-The full component model, lifecycles, and phased roadmap for this boundary are defined in [Assistant Core Architecture](./assistant-core-architecture.md), which is now the authoritative reference for Assistant Core. Implementation has not started.
+The full component model, lifecycles, phased roadmap, and current implementation status for this boundary are defined in [Assistant Core Architecture](./assistant-core-architecture.md), which is now the authoritative reference for Assistant Core.
 
 ## Additional Automation Integrations
 
