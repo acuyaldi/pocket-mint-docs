@@ -386,11 +386,12 @@ Introduce bounded probabilistic interpretation only after deterministic financia
 **Blocked By**
 
 - Any request for AI to decide financial truth, infer missing history, bypass validation, or act with reusable User authority.
-- Any undefined AI Transaction Extraction or AI Assistant product contract.
+- Any undefined AI Transaction Extraction product contract.
 
 **Enables**
 
-- The documented future AI Transaction Extraction and AI Assistant directions within the established trust boundary.
+- The documented future AI Transaction Extraction direction within the established trust boundary.
+- Assistant Core (Phase 21), whose architecture is now defined in [Assistant Core Architecture](../architecture/assistant-core-architecture.md); implementation has not started.
 
 **Risk**
 
@@ -506,6 +507,94 @@ Normalize the completed product around one approved visual and component contrac
 **Risk**
 
 - **Medium:** visual changes can obscure state meaning or create apparent inconsistencies if applied before product and data contracts stabilize.
+
+---
+
+### Phase 21 — Assistant Core
+
+**Purpose**
+
+Build the conversational Assistant boundary defined in [Assistant Core Architecture](../architecture/assistant-core-architecture.md): a provider-neutral orchestration layer that queries and proposes mutations through the existing Backend and Business Services, never around them.
+
+**Repositories**
+
+- `pocket-mint-docs` owns the Assistant Core ADR, canonical terminology, risk/policy definitions, and lifecycle contracts.
+- `pocket-mint-be` owns the Assistant boundary itself: Conversation Manager, Intent Resolver, Bounded Workflows, Execution Engine, Risk and Policy Gate, Tool Router, Tool Registry, Draft Store, Conversation Store, Audit Log, and the provider adapter. It reuses existing domain services unchanged.
+- `pocket-mint-fe` owns the conversational surface, draft/preview presentation, and explicit confirmation controls.
+
+**Dependencies**
+
+- Phases 1 through 8.
+- Stable authenticated Backend contracts and Canonical Calculations.
+
+**Sub-Phases**
+
+- **21.1 — Documentation and Contracts:** ADR (complete), canonical Assistant types, initial tool contract, risk/confirmation enums, lifecycle state definitions. ✅ **Complete.** Module at `src/assistant/` in `pocket-mint-be`. Canonical contracts: `ToolContract`, `ExecutionContext`, `PolicyResult`, `ToolRegistry`, `evaluatePolicy`. First tool: `analytics.monthly-spending-summary` (LOW risk, read-only, no confirmation). Validation via minimal internal validators (no Zod/Joi — compatible with adopting them later).
+- **21.2 — Read-Only Assistant Foundation:** ✅ **Implemented.** Provider-neutral canonical request/response, correlation ID middleware, deterministic intent resolver, consolidated executor/tool-router, tool handler wired to existing `transactionQueryService` + `analyticsCategoriesService`, deterministic Indonesian response renderer, HTTP endpoint `POST /v1/assistant/execute`, structured audit logging via existing logger. **No LLM provider integrated.** Conversation persistence and draft persistence remain deferred. Durable audit persistence remains deferred.
+- **21.3 — Conversation Persistence:** conversation, message, and tool-execution records; expiration and cleanup.
+- **21.4 — First Financial Draft Flow:** `transaction.create` draft → preview → confirm → commit through the existing transaction service, with idempotency and audit history.
+- **21.5 — Bounded Multi-Tool Workflows:** added only after 21.2–21.4 are stable.
+- **21.6 — Proactive Domain-Event Workflows:** deferred until conversational request/response behavior is production-ready.
+
+**Blocked By**
+
+- Any request to give the Assistant a database path that bypasses the Tool Router, Business Services, or existing authorization.
+- Any request to commit a financial write without a Draft → Preview → Explicit Confirmation → Commit cycle.
+
+**Enables**
+
+- Conversational read access to a User's own financial data.
+- Conversational initiation of financial writes under the same authorization and confirmation rules as every other client.
+
+**Risk**
+
+- **High:** an under-validated tool contract or a weakened confirmation path would let untrusted model output affect financial state.
+
+### Phase 21.1 Implementation Note (2026-07-22, corrected 2026-07-22)
+
+**Module path:** `src/assistant/` in `pocket-mint-be` — a self-contained module following existing flat-layered repo conventions. Internal structure: `types.ts` (canonical types), `errors.ts` (domain errors), `policy.ts` (deterministic policy evaluator), `registry.ts` (static tool registry), `tools.ts` (tool contract definitions), `bootstrap.ts` (startup wiring), `executor.ts` (consolidated executor + tool router), `intent.ts` (deterministic intent resolver), `renderer.ts` (Indonesian response renderer), `handlers/` (tool implementations), `index.ts` (barrel).
+
+**Corrections applied after initial 21.1 review:**
+
+- **Risk-policy mapping:** `evaluatePolicy` now maps by `confirmationPolicy` rather than inferring from `riskLevel` alone. HIGH risk defaults to EXPLICIT (draft + confirm), not STEP_UP. STEP_UP is an optional strengthening available to any tier. VERY_HIGH always maps to UNAVAILABLE in v1.
+- **Registry invariants:** MEDIUM and HIGH both require at least EXPLICIT. HIGH no longer requires STEP_UP. VERY_HIGH requires DISABLED.
+- **Removed `_context` parameter from `evaluatePolicy`** — unused in the current deterministic implementation; will be reintroduced with Preference memory (Phase 21.3).
+- **Money representation:** Tool boundary uses `number` via `Number(decimal.toString())`, matching the existing controller convention. No financial arithmetic is performed with JS numbers inside Assistant Core.
+
+### Phase 21.2 Implementation Note (2026-07-22)
+
+**Canonical request/response:**
+
+- Request: `{ intent: string, arguments: unknown, conversationId?: string, locale?: string }`
+- Response: `{ status: 'success' | 'clarification_required' | 'rejected' | 'error', renderedText, data, correlationId }`
+
+**HTTP route:** `POST /api/v1/assistant/execute` — authenticated via existing `requireUser` middleware. Only the allow-listed intent `analytics.monthly-spending-summary` is accepted. Callers cannot send arbitrary tool IDs.
+
+**Correlation ID:** Fresh UUIDv4 generated per request via `correlationMiddleware`. Returned in `X-Correlation-Id` response header and in the response body. Caller-supplied IDs are not accepted.
+
+**Intent resolver:** Deterministic allow-list (`resolveIntent`). One supported intent: `analytics.monthly-spending-summary`. A future provider adapter will translate NL into this canonical structure.
+
+**Executor / Tool Router:** Consolidated into one component (`executeTool`). Resolves tool → checks enabled → evaluates policy → rejects non-immediate → validates input → resolves handler → executes with timeout → validates output → returns structured result. Logs execution metadata with correlation ID via existing logger.
+
+**Tool handler:** `handleMonthlySpendingSummary` calls `transactionQueryService.getSummary` (P&L) and `analyticsCategoriesService.getCategoryBreakdown` (top expense categories). Parses `YYYY-MM` → Jakarta calendar month via existing `getReportingMonthRange`. Serializes `Prisma.Decimal` → `number` via `Number(decimal.toString())`. Uses `userId` from `ExecutionContext` — never from tool input.
+
+**Renderer:** `renderMonthlySpendingSummary` produces deterministic Indonesian text. Handles: positive/negative net savings, zero transactions, empty categories. Uses `Intl.NumberFormat('id-ID')` for rupiah formatting.
+
+**Audit logging:** Structured log entries via existing `logger.info('assistant_tool_execution', ...)` with correlation ID, userId, toolId, status, durationMs. No durable database audit persistence — deferred per ADR.
+
+**Explicitly NOT implemented:**
+- No LLM provider adapter (OpenAI, Anthropic, Gemini, etc.)
+- No prompt engineering
+- No frontend chat
+- No conversation/message Prisma tables
+- No draft persistence
+- No transaction creation through Assistant
+- No general planner or workflow DAG
+- No semantic memory
+- No preference persistence
+- No proactive events
+- No Redis, message queues, WebSocket, or streaming
+- No general arbitrary-tool execution endpoint
 
 ---
 
