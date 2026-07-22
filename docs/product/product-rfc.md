@@ -375,11 +375,9 @@ Planned:
 - WhatsApp Parsing
 - AI Transaction Extraction
 
-Next product phase (active planning, not yet implemented):
+Budgeting, Analytics v2, and Smart Categorization Foundation (Phase 18, [PD-010](./decisions/010-smart-categorization-foundation.md)) have since shipped. Merchant Mapping (Phase 19, [PD-011](./decisions/011-merchant-mapping.md)) is implemented, extending the same categorization pipeline as a higher-priority stage before keyword matching.
 
-- **Budgeting** — per-category monthly spending limits. See [PD-009](./decisions/009-budgeting-scope.md) (Draft), [Budgeting Readiness Audit](../development/budgeting-readiness-audit.md), and [Budgeting Calculation Specification](../development/budgeting-calculation-spec.md).
-
-Roadmap after Budgeting, in order: Analytics v2, Smart Categorization (Merchant Mapping, Rule Engine), Automation, React Native, optional PWA, Dark Mode backlog.
+Roadmap after Merchant Mapping, in order: Rule Engine (Phase 20), Automation, React Native, optional PWA, Dark Mode backlog.
 
 ---
 
