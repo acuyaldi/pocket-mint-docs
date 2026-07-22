@@ -375,9 +375,9 @@ Planned:
 - WhatsApp Parsing
 - AI Transaction Extraction
 
-Budgeting, Analytics v2, and Smart Categorization Foundation (Phase 18, [PD-010](./decisions/010-smart-categorization-foundation.md)) have since shipped. Merchant Mapping (Phase 19, [PD-011](./decisions/011-merchant-mapping.md)) is implemented, extending the same categorization pipeline as a higher-priority stage before keyword matching.
+Budgeting, Analytics v2, and Smart Categorization Foundation (Phase 18, [PD-010](./decisions/010-smart-categorization-foundation.md)) have since shipped. Merchant Mapping (Phase 19, [PD-011](./decisions/011-merchant-mapping.md)) is implemented, extending the same categorization pipeline as a higher-priority stage before keyword matching. Rule Engine (Phase 20, [PD-012](./decisions/012-rule-engine.md)) is implemented, extending the same pipeline as the new highest-priority stage, ahead of Merchant Mapping.
 
-Roadmap after Merchant Mapping, in order: Rule Engine (Phase 20), Automation, React Native, optional PWA, Dark Mode backlog.
+Roadmap after Rule Engine, in order: Automation, React Native, optional PWA, Dark Mode backlog.
 
 ---
 

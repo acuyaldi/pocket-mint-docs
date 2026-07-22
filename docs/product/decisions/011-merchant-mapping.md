@@ -54,17 +54,19 @@ No mapping is ever created as a side effect of a suggestion being accepted, a tr
 
 ### How Rule Engine (Phase 20) will extend this architecture
 
-Phase 20 is unaffected by this change and will slot in above Merchant Mapping, per PD-010's original diagram:
+Phase 20 is unaffected by this change and will slot in above Merchant Mapping:
 
 ```
 User input (description)
+  → [Rule Engine] (Phase 20, future — highest priority)
   → MerchantNormalizer (Phase 18)
   → Merchant Alias Lookup (Phase 19 — this document)
   → KeywordMatcher (Phase 18)
-  → [Rule Engine] (Phase 20, future — highest priority)
   → ConfidenceCalculator (Phase 18)
   → Ranked suggestions
 ```
+
+> **Correction (2026-07-22, [PD-012](./012-rule-engine.md)):** this diagram originally placed `[Rule Engine]` between `KeywordMatcher` and `ConfidenceCalculator`, contradicting the prose immediately below ("a matching user-defined rule will short-circuit ahead of a Merchant Mapping hit"). Rule Engine runs **first**, as shown above. See PD-012 for the corrected pipeline and rationale.
 
 When Phase 20 lands, a matching user-defined rule will short-circuit ahead of a Merchant Mapping hit, the same way a Merchant Mapping hit today short-circuits ahead of keyword matching. No existing stage is rewritten to add it — only a new check is inserted before the others, consistent with the "each stage is a pure function with no side effects" principle from PD-010.
 
