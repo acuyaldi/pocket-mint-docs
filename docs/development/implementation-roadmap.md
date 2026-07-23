@@ -664,7 +664,7 @@ Resolve future textual wallet, merchant, and category references through determi
 **Sub-Phases**
 
 - **22.1 — Deterministic Entity Resolution Foundation:** ✅ **Implemented.** Closed entity/reference contracts; NFKC normalization and fixed UTF-8/count limits; immutable internal candidates; exact canonical/alias/normalized evidence; 0–1000 integer confidence; conservative ambiguity policy; finalized resolver registry; owner-scoped asynchronous resolver boundary; safe internal/public result separation; and test-only multi-owner fixtures. No Prisma migration, production resolver, endpoint, provider integration, persistent option token, logging, alias learning, or financial mutation.
-- **22.2 — Wallet Resolution:** ⏳ **Pending.** Add the first production owner-scoped wallet resolver and the separately reviewed textual-reference integration. Phase 22.1 does not start this work.
+- **22.2 — Wallet Resolution:** ✅ **Implemented.** Production Wallet Resolver with database-level owner and active-wallet scope; trusted-constraint eligibility; canonical, normalized, and bounded trusted-name alias matching; provider-only `walletReference`; deterministic `walletId` compatibility; Assistant draft integration; safe ambiguous/not-found outcomes; and unchanged explicit confirmation.
 - **22.3 — Merchant Resolution:** ⏳ **Pending.**
 - **22.4 — Category Resolution:** ⏳ **Pending.**
 - **22.5 — Clarification Engine:** ⏳ **Pending.** Consume bounded ambiguity data with ownership and eligibility revalidation; option data is never authorization.
@@ -677,6 +677,14 @@ The backend module is additive under `src/assistant/entity-resolution/` and is n
 Normalization rejects unsafe controls, bidi controls, malformed surrogates, empty results, and byte overflow; it applies NFKC, locale-independent lowercasing, Unicode punctuation/separator replacement, whitespace collapse, and trimming while preserving digits, scripts, and symbols. Full-width `ＢＣＡ` becomes `bca`; `BCA-DEBIT` becomes `bca debit`.
 
 The production registry has no Wallet, Merchant, or Category resolver. Phase 22.1 therefore adds no query, schema change, migration, transaction behavior, clarification endpoint, live provider call, frontend, channel, embedding, fuzzy matching, semantic retrieval, or later-phase behavior. Smart categorization and merchant mapping remain unchanged; their merchant-specific prefix/number stripping and contains/token confidence semantics are deliberately not reused for authoritative generic resolution.
+
+### Phase 22.2 Implementation Note (2026-07-23)
+
+The production entity resolver registry now registers `createWalletResolver(prisma)`. Candidate loading queries `wallets` with authenticated `userId` and `isArchived = false` before materialization, selects only the bounded resolver projection, and requires backend-owned `transaction.create` eligibility constraints. Candidate matching reuses the Phase 22.1 normalization, evidence, confidence, ambiguity margin, stable ordering, and public projection unchanged. Exact aliases are bounded normalized components derived only from the trusted wallet name; no provider alias, fuzzy search, substring scoring, semantic similarity, embedding, or provider confidence is used.
+
+The provider-visible `transaction.create` contract now requires `walletReference` and contains no `walletId`. Provider plan validation enforces the provider argument allow-list before calling the shared contract. The canonical Assistant `/execute` compatibility layer accepts either `walletReference` or `walletId`, never both, so deterministic internal callers are not broken. Only Assistant execution resolves references; normal Wallet REST APIs remain unchanged.
+
+`resolved` supplies the internal ID to the existing financial draft service, which still validates owner-scoped wallet/category records and creates only a 15-minute `PENDING_CONFIRMATION` draft. `ambiguous` returns stable safe options without internal IDs, while `not_found` covers absent, archived, ineligible, and cross-owner-only wallets. Neither outcome creates a draft or transaction. Explicit confirmation remains the only path to the existing Transaction Service. There is no Prisma migration, persistent option token, alias table, alias learning, conversation-aware reference, Merchant/Category resolver, or financial mutation during resolution.
 
 ---
 
