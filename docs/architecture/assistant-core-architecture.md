@@ -2,7 +2,7 @@
 
 ## 1. Status
 
-Approved for architecture. Phases 21.1 through 21.6 and Phases 22.1 through 22.3 are implemented: contracts, deterministic execution, conversation persistence, financial drafts, bounded context assembly, the first provider runtime, the generic deterministic entity-resolution foundation, and production textual wallet and merchant resolution. This document supersedes the informal "AI Assistant" description in [System Architecture](./system-architecture.md#ai-assistant) as the single source of truth for Assistant Core. That section now points here instead of describing the boundary independently.
+Approved for architecture. Phases 21.1 through 21.6 and Phases 22.1 through 22.4 are implemented: contracts, deterministic execution, conversation persistence, financial drafts, bounded context assembly, the first provider runtime, the generic deterministic entity-resolution foundation, and production textual wallet, merchant, and category resolution. This document supersedes the informal "AI Assistant" description in [System Architecture](./system-architecture.md#ai-assistant) as the single source of truth for Assistant Core. That section now points here instead of describing the boundary independently.
 
 ---
 
@@ -323,6 +323,22 @@ Merchant ambiguity returns bounded safe labels without mapping IDs and creates n
 
 Merchant Resolver never reads or returns the mapping's category, so it cannot become a categorization engine. Existing responsibility remains one-directional: Merchant Mapping supplies a trusted merchant representation to resolution and separately supplies advisory category suggestions. Phase 22.3 does not overwrite manual `categoryId`, auto-assign a mapping category, change Merchant Mapping-before-keyword precedence, implement the reserved Rule Engine stage, or alter confidence policy. Category Resolution remains Phase 22.4.
 
+### Production Category Resolver — Approved Design
+
+`Category` is entirely User-owned. Each row has `id`, `userId`, `name`, `type`, `icon`, `color`, `createdAt`, and `updatedAt`; `type` is `INCOME` or `EXPENSE`, and `(userId, name, type)` is unique. There are no shared or global categories, aliases, canonical-name fields, lifecycle flags, soft deletes, or localization keys. Default categories are ordinary private rows lazily created by `ensureDefaultCategories()`, not system records. Category resolution is read-only and never invokes that function. A User whose defaults have not been seeded can therefore receive `not_found`; this is a safe known limitation, not a reason for a hidden write.
+
+For `transaction.create`, backend-created trusted constraints are exactly `eligibleFor: "transaction.create"` and `transactionType: "INCOME" | "EXPENSE"`. They cannot come from provider or User input. Candidate loading queries `Category` with both authenticated `userId` and trusted `type` in SQL, selects only `id`, `name`, and `type`, and takes 101 rows so the generic 100-candidate limit fails closed rather than truncating or selecting. It does not query other Users, budgets, transaction history, Merchant Mapping, Smart Categorization keywords, or any write path.
+
+`Category.name` is the canonical and safe display label. `Category.type` is the only safe discriminator when needed, while the authoritative ID remains internal. There are no aliases because the schema has no authoritative alias source. Matching reuses the Phase 22.1 NFKC normalization, canonical exact and normalized exact evidence, integer confidence, inclusive ambiguity margin, candidate validation, stable ordering, and safe public projection unchanged. Contains, substring, token, merchant-prefix, number-stripping, edit-distance, fuzzy, phonetic, stemming, semantic, popularity, frequency, recent-use, embedding, and provider-confidence matching remain absent.
+
+The provider-visible `transaction.create` contract requires textual `categoryReference` and exposes no category identifier. Strict validation rejects `categoryId`, identifier variants, ownership/type/lifecycle/authorization/confirmation claims, confidence, evidence, trusted constraints, prototype keys including Unicode-confusable forms, and unknown fields. The trusted canonical contract accepts exactly one of `categoryReference` or compatibility `categoryId` for the currently supported `INCOME` and `EXPENSE` types. Compatibility `categoryId` is reserved for deterministic callers, bypasses textual resolution, and still undergoes authenticated ownership and type validation. Both forms or neither form are rejected. The Assistant capability remains closed to `TRANSFER`; transfer requests and either category form on a transfer remain rejected by the existing `INCOME | EXPENSE` contract.
+
+Assistant execution resolves an explicit `categoryReference` after textual Wallet and optional Merchant resolution and before draft preparation. `resolved` passes only the internal Category ID to the existing draft boundary. `ambiguous`, required `not_found`, and safe invalid-reference handling create no financial draft, Transaction, or wallet-balance change. An explicit reference never falls back to Merchant Mapping category data or Smart Categorization keywords and is never silently replaced by an advisory suggestion. Smart Categorization remains a separate manual advisory flow: exact Merchant Mapping lookup, static keyword matching against the User's categories, bounded deterministic suggestions, and explicit User choice of a Category ID. The reserved Rule Engine remains an unimplemented future insertion point.
+
+Draft preparation revalidates owner and type and selects the authoritative Category name during that existing query. Structured and rendered Assistant previews expose the name, never Category ID, User/owner ID, confidence/evidence internals, budget data, usage statistics, or raw Prisma data. The internal Category ID is stored only where confirmation needs it. Separate authenticated confirmation remains the only financial mutation path and calls the existing Transaction Service, which revalidates ownership and type. Deletion or invalidation before confirmation therefore fails without mutation under existing domain validation and idempotency behavior.
+
+The production registry contains exactly one each of Wallet, Merchant, and Category Resolver, preserves deterministic registered-type ordering and finalization, and contains no test resolver. Phase 22.4 adds no schema migration, Category management API, frontend behavior, persistent option token, Clarification Engine, conversation-aware resolution, alias learning, automatic Category creation, Rule Engine, or Phase 22.5 behavior.
+
 Entity resolution supplements but never replaces authentication, the Tool Registry, policy evaluation, owner-scoped domain validation, input validation, or explicit financial confirmation.
 
 ## 16. Domain-Event Integration
@@ -482,7 +498,7 @@ Deferred until provider-backed conversational request/response behavior is produ
 
 ## 27. Implementation Status (2026-07-23)
 
-Phases 21.1 through 21.6 and Phases 22.1 through 22.3 are implemented in `pocket-mint-be`:
+Phases 21.1 through 21.6 and Phases 22.1 through 22.4 are implemented in `pocket-mint-be`:
 
 - **Phase 21.1 — Documentation and Contracts:** ✅ ADR (this document), canonical types, tool contracts, registry, policy evaluator.
 - **Phase 21.2 — Read-Only Assistant Foundation:** ✅ Implemented.
@@ -498,6 +514,7 @@ Phases 21.1 through 21.6 and Phases 22.1 through 22.3 are implemented in `pocket
 - **Deterministic entity-resolution foundation:** Implemented (Phase 22.1)
 - **Production wallet resolution:** Implemented (Phase 22.2); Assistant-only `walletReference` integration with owner-scoped active-wallet querying
 - **Production merchant resolution:** Implemented (Phase 22.3); Assistant-only `merchantReference` integration with owner-scoped Merchant Mapping querying and safe free-form fallback
+- **Production category resolution:** Implemented (Phase 22.4); provider-only `categoryReference`, owner/type-scoped read-only Category querying, deterministic `categoryId` compatibility, and Category-name-only Assistant previews
 
 ### Phase 22.1 Entity Resolution Decision (2026-07-23)
 
@@ -513,7 +530,15 @@ The provider-visible `transaction.create` contract requires `walletReference` an
 
 The production registry now contains exactly one Merchant Resolver in addition to the unchanged Wallet Resolver. The resolver queries only authenticated owner-scoped `MerchantMapping` rows and uses `merchantName` plus persisted `normalizedMerchant`; it exposes no mapping/category/owner ID and creates no data. No Prisma schema or migration is required.
 
-Provider `transaction.create` now requires `merchantReference` and rejects merchant identifiers, ownership claims, provider confidence/evidence, and unknown fields. A unique match supplies only a safe canonical label. Ambiguity returns safe options and no draft. `not_found` preserves the bounded normalized text as optional free-form merchant data because the current transaction domain has no required Merchant identity. Mapping categories never flow through resolution, so manual category input and the existing advisory Merchant Mapping then keyword behavior are unchanged; the reserved Rule Engine and Phase 22.4 Category Resolution remain pending.
+Provider `transaction.create` requires `merchantReference` and rejects merchant identifiers, ownership claims, provider confidence/evidence, and unknown fields. A unique match supplies only a safe canonical label. Ambiguity returns safe options and no draft. `not_found` preserves the bounded normalized text as optional free-form merchant data because the current transaction domain has no required Merchant identity. Mapping categories never flow through resolution, so manual category input and the existing advisory Merchant Mapping then keyword behavior are unchanged; the reserved Rule Engine remains pending and unimplemented.
+
+### Phase 22.4 Category Resolution Decision (2026-07-23)
+
+The production registry now contains exactly one Category Resolver in addition to the unchanged Wallet and Merchant resolvers. Its read-only Prisma query applies authenticated `userId` and backend-owned `Category.type` before candidate materialization, selects only ID/name/type, and takes 101 rows so the generic 100-candidate boundary fails closed. It uses Category name as canonical/display text, no aliases, and the unchanged Phase 22.1 NFKC exact-match, confidence, ambiguity, validation, ordering, and public-projection rules.
+
+Provider `transaction.create` now requires `categoryReference` and exposes no Category identifier. The canonical deterministic contract accepts exactly one of textual `categoryReference` or compatibility `categoryId`; compatibility IDs bypass textual resolution but retain draft and Transaction Service owner/type revalidation. Category ambiguity or `not_found` persists one clarification lifecycle and creates no financial draft, Transaction, or balance change. Explicit references never fall back to Merchant Mapping category data or Smart Categorization keywords.
+
+Draft preparation selects authoritative Category name during its existing owner/type query. Structured and rendered Assistant previews expose that name and no Category ID; only the pending draft stores the ID needed for separate confirmation. No schema or migration changed, default-category seeding is never invoked, and an unseeded User can receive `not_found`. Phase 22.4 adds no Rule Engine, Clarification Engine, persistent option token, conversation-aware resolution, Category API, frontend work, or Phase 22.5 behavior.
 
 ### Phase 21.6 Provider Runtime Decision (2026-07-23)
 
