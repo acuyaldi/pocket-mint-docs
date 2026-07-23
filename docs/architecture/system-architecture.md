@@ -234,7 +234,7 @@ The Backend may publish an internal signal that work is due, or Automation may i
 
 Automation sends AI Services a bounded interpretation request with minimized context. AI Services return a proposal, extraction, classification, or explanation. Automation preserves origin and uncertainty, then either presents the proposal for confirmation or submits it to an approved backend validation path. AI Services never communicate with the Database and never receive reusable authority to act as a User.
 
-For Assistant conversations, `AssistantApplicationService.prepareProviderExecution` is the internal handoff: ownership-scoped ContextService reads are assembled and serialized before a future provider adapter is invoked. Context assembly itself performs no provider call, tool call, audit write, message persistence, or financial mutation. There is no public context endpoint.
+For Assistant conversations, `AssistantApplicationService.prepareProviderExecution` is the internal handoff: an unpersisted current User request plus exactly four ownership-scoped SQL reads are assembled and serialized before a future provider adapter is invoked. The current request is appended exactly once and last, with any pending draft immediately before it. Context assembly itself performs no provider call, tool call, audit write, message persistence, or financial mutation. There is no public context endpoint.
 
 ```mermaid
 sequenceDiagram
