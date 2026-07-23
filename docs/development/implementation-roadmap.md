@@ -573,8 +573,9 @@ Build the conversational Assistant boundary defined in [Assistant Core Architect
 - **21.2 — Read-Only Assistant Foundation:** ✅ **Implemented.** Provider-neutral canonical request/response, correlation ID middleware, deterministic intent resolver, consolidated executor/tool-router, tool handler wired to existing `transactionQueryService` + `analyticsCategoriesService`, deterministic Indonesian response renderer, HTTP endpoint `POST /v1/assistant/execute`, structured audit logging via existing logger. **No LLM provider integrated.** Conversation persistence and draft persistence remain deferred. Durable audit persistence remains deferred.
 - **21.3 — Conversation Persistence:** ✅ **Implemented.** User-owned conversations, canonical messages with source provenance, explicit request turns, minimized durable tool-execution history, bounded ownership-scoped retrieval, and idempotent archive. Automatic expiration and permanent deletion remain deferred pending an approved retention policy.
 - **21.4 — First Financial Draft Flow:** ✅ **Implemented.** `transaction.create` creates a 15-minute owner-scoped draft only; dedicated confirm/cancel endpoints enforce explicit confirmation, database-backed idempotency, PostgreSQL draft locking, atomic reuse of the existing transaction service, and minimized lifecycle audit history. Transfers, installments, providers, channels, frontend work, and automatic stale-draft cleanup remain out of scope.
-- **21.5 — Bounded Multi-Tool Workflows:** added only after 21.2–21.4 are stable.
-- **21.6 — Proactive Domain-Event Workflows:** deferred until conversational request/response behavior is production-ready.
+- **21.5 — Assistant Memory, Context Assembly, Conversation Retrieval, Prompt Context Engine:** ✅ **Implemented.** Owner-scoped `AssistantContextService`; deterministic oldest-to-newest DTO assembly from bounded newest-first reads; configurable 40-message, 20-turn, 10-tool, one-draft, and 64 KiB limits; protected current request/pending draft/latest Assistant response; ISO timestamps, canonical decimals, stable serialization, and hidden-field filtering. Four bounded Prisma reads avoid N+1 work. `AssistantApplicationService.prepareProviderExecution` is internal-only and read-only; the Phase 21.4 execute path does not invoke it, and no endpoint was added.
+- **21.6 — Provider Runtime:** first production consumer of the Phase 21.5 context engine. Provider-specific adapters remain outside provider-neutral Assistant Core contracts.
+- **Later — Proactive Domain-Event Workflows:** deferred until provider-backed conversational request/response behavior is production-ready.
 
 **Blocked By**
 
@@ -589,6 +590,14 @@ Build the conversational Assistant boundary defined in [Assistant Core Architect
 **Risk**
 
 - **High:** an under-validated tool contract or a weakened confirmation path would let untrusted model output affect financial state.
+
+### Phase 21.5 Implementation Note (2026-07-23)
+
+The Context Engine treats persisted conversations as authoritative and `AssistantContext` as a disposable derived object. Ownership is checked before child history reads; unknown and cross-User IDs remain indistinguishable, and archived conversations cannot be prepared for continued execution. After ownership succeeds, messages with turn metadata, one unexpired pending draft, and recent tool executions are retrieved as three bounded parallel reads. The owned-conversation read also carries the latest Assistant response so it remains protected even under a pathological User-only backlog.
+
+DTOs expose conversation timestamps/state, canonical messages and turns, only the public draft projection, safe tool summaries, and the explicit current request. They omit owner/database/internal IDs other than `conversationId` and `draftId`, plus policy, risk, Prisma, correlation, stack, SQL, lock, idempotency, audit, raw payload/argument, execution metadata, and reasoning fields. Serialization uses ISO timestamps, normalized decimal strings, stable object keys, and a UTF-8 64 KiB ceiling. Oldest removable data is trimmed first; protected content is never truncated.
+
+`AssistantApplicationService.prepareProviderExecution` is deliberately not routed and is not called by `execute`. It only delegates to ContextService and returns the deterministic DTO. Phase 21.6 will provide the first provider-runtime consumer; Phase 21.5 includes no LLM SDK, provider call, prompt execution, tool change, mutation, cache, embedding, semantic search, worker, streaming, or channel integration.
 
 ### Phase 21.1 Implementation Note (2026-07-22, corrected 2026-07-22)
 

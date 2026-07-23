@@ -187,6 +187,8 @@ AI Services do not own:
 
 AI output is untrusted input. It must carry confidence and provenance where useful, remain distinguishable from recorded facts, and be validated by the Backend before use. Consequential AI-proposed actions require the level of User control established by product policy.
 
+The Backend prepares provider input through the Assistant Context Engine. This engine reads only an authenticated User's active conversation and derives a bounded, deterministic `AssistantContext`; it does not mutate conversation or financial state. Context contains minimized conversation history, at most one pending draft, safe tool summaries, and the explicit current request. Hidden persistence, policy, risk, correlation, audit, and reasoning data never crosses the provider boundary. Phase 21.5 exposes this only as an internal application-service method; the existing deterministic Assistant execute route does not call it. Phase 21.6 provider runtime is its first production consumer.
+
 ---
 
 # Data Ownership
@@ -201,6 +203,7 @@ AI output is untrusted input. It must carry confidence and provenance where usef
 | Reporting Cutoff, Reporting Period, and Reporting Timezone application | Business Services using persisted settings and event times | Frontend displays; Automation schedules against backend-defined boundaries |
 | Automation job state and delivery metadata | Automation, with durable evidence where required | Backend decides whether requested work is valid and idempotent |
 | Imported or AI-extracted proposal | Automation until accepted | AI proposes; Backend validates; it becomes financial truth only after an approved backend operation records it |
+| Assistant context | Conversation storage is authoritative; Backend Context Engine derives a request-local DTO | Provider runtime receives only bounded, redacted context and cannot write it back as financial truth |
 | Audit and provenance records | Database under Business Service control | Frontend and Automation may receive authorized explanations |
 
 Financial truth lives in persisted Ledger facts plus backend-owned Canonical Calculations. A balance or Derived Metric may be materialized for performance only if it remains reproducible from its authoritative inputs, is governed by the same write transaction, and cannot drift into a competing source of truth.
@@ -230,6 +233,8 @@ The Backend may publish an internal signal that work is due, or Automation may i
 ## Automation and AI
 
 Automation sends AI Services a bounded interpretation request with minimized context. AI Services return a proposal, extraction, classification, or explanation. Automation preserves origin and uncertainty, then either presents the proposal for confirmation or submits it to an approved backend validation path. AI Services never communicate with the Database and never receive reusable authority to act as a User.
+
+For Assistant conversations, `AssistantApplicationService.prepareProviderExecution` is the internal handoff: ownership-scoped ContextService reads are assembled and serialized before a future provider adapter is invoked. Context assembly itself performs no provider call, tool call, audit write, message persistence, or financial mutation. There is no public context endpoint.
 
 ```mermaid
 sequenceDiagram
