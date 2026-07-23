@@ -182,6 +182,18 @@ Minimum memory for v1, layered:
 - **Preference memory** — explicit, User-set preferences (default wallet, verbosity, reminder delivery, confirmation strength) that may only strengthen, never weaken, mandatory policy.
 - **Long-term semantic memory** — deferred (§24). Merchant aliases, category rules, wallet state, saving goals, and budgets already live in the finance domain and are always fetched from there, never cached as a second source of truth in conversation memory.
 
+Phase 21.5 implements conversation memory as an `AssistantContextService`. Conversation storage remains authoritative; `AssistantContext` is a read-only, derived DTO and context assembly never creates or updates a conversation, turn, message, draft, tool execution, audit record, or financial row. The service validates authenticated ownership before reading history. Unknown and cross-User conversation IDs remain indistinguishable, and archived conversations cannot be prepared for continued execution.
+
+Context is assembled in a fixed sequence: system metadata, conversation metadata, recent turns/messages, recent tool executions, one unexpired pending draft when present, then the explicit current User request. The draft is therefore immediately before the request. Retrieval is newest-first and bounded, while the final DTO is oldest-to-newest with `createdAt` then `id` as the stable tie-break. Defaults are 40 messages, 20 turns, 10 tool executions, one draft, and 64 KiB of UTF-8 serialized JSON. Invalid or unreasonable limits are rejected before any query. Oldest removable whole turns or tool entries are discarded first; the current request, pending draft, and latest Assistant response are protected. If protected content alone exceeds the byte limit, preparation fails with `ASSISTANT_CONTEXT_TOO_LARGE` instead of silently truncating or writing anything.
+
+Only provider-safe DTO fields cross this boundary. `conversationId` is an allowed public Assistant identifier, not a hidden database identifier; all other internal IDs are excluded except `draftId`. Draft context contains only `draftId`, operation, status, normalized preview, expiry, and confirmation requirement. Tool context contains tool, status, ISO timestamp, and a recursively filtered safe output summary. Explicit normalized-key deny-list matching removes owner/user, correlation, policy/risk, database, stack, SQL/lock, idempotency, audit, raw argument/output, credential/token/secret, balance, and prototype keys without broad substring filtering. Unsupported prototypes, values, or cycles fail safely. Decimal values are emitted as strings without floating-point conversion and redundant trailing zeroes are removed; timestamps use UTC ISO 8601 and arbitrary safe-summary object keys are serialized in stable order.
+
+The read plan is exactly four SQL statements and avoids N+1 work: one owned-conversation lookup; one bounded, owner-scoped messages query that joins turn metadata and includes the latest Assistant response in the same statement; one owner-scoped active-draft query; and one owner-scoped tool-history query. The three child reads run in parallel after ownership succeeds, and the count does not grow with conversation size. Expired or non-pending drafts are omitted without being mutated. No Redis, distributed cache, semantic search, embeddings, or AI summary is involved.
+
+The DTO uses turns as its single canonical conversation-history representation; there is no duplicate flat message collection. A message-count boundary may intentionally retain only the newest portion of the oldest included turn. Every retained message remains nested under that turn's status and timestamp, while byte trimming removes whole optional turns so it cannot create additional partial structures.
+
+`prepareProviderExecution` accepts an unpersisted current User request. It validates and appends that request exactly once as the final context item; callers must not persist the same request first and then pass it as the current request. Identical text in an older persisted message remains distinct historical context and is not content-deduplicated.
+
 ## 15. Provider Adapter Boundary
 
 ```text
@@ -293,7 +305,7 @@ Explicitly postponed past the first Assistant release, per both source proposals
 
 - Bounded, deterministic workflows mean some multi-tool requests will initially be handled with hand-written step sequences rather than a general planner — more workflow code per new capability, but no speculative planning infrastructure to maintain before it's needed.
 - One generic draft mechanism instead of per-domain draft tables means slightly generic preview code, in exchange for not maintaining N drift-prone confirmation subsystems.
-- Deferring domain-event integration means the Assistant cannot yet initiate conversation — it is reactive-only until Phase 21.6, which is an accepted trade for keeping v1 delivery small.
+- Deferring domain-event integration means the Assistant cannot yet initiate conversation; that path remains later than the Phase 21.6 provider runtime, which is an accepted trade for keeping v1 delivery small.
 - Risk/policy as one module is simpler to reason about now, at the cost of a later split if policy rules grow enough to need independent deployment — acceptable since nothing today requires that separation.
 
 ---
@@ -328,19 +340,23 @@ Conversation records, message records, tool-execution records, expiration and cl
 
 First write capability: `transaction.create`. Validated draft creation, preview, explicit confirmation, commit through the existing transaction service, idempotency, audit history.
 
-### Phase 21.5 — Bounded Multi-Tool Workflows
+### Phase 21.5 — Assistant Context Engine
 
-Added only after the read and write vertical slices (21.2–21.4) are stable in production use.
+Deterministic owner-scoped conversation retrieval, provider-neutral context DTOs, bounded assembly and serialization, hidden-field filtering, draft/tool history integration, and an internal provider-preparation boundary. No provider consumes this boundary yet, and the existing execute path remains unchanged.
 
-### Phase 21.6 — Proactive Domain-Event Workflows
+### Phase 21.6 — Provider Runtime
 
-Deferred until conversational request/response behavior (21.1–21.5) is production-ready. Introduces the Domain Event Subscriber path described in §16.
+First production consumer of the Phase 21.5 context engine. Provider integration remains behind the provider-neutral adapter and must not alter context ownership, minimization, or financial authority boundaries.
+
+### Later Phase — Proactive Domain-Event Workflows
+
+Deferred until provider-backed conversational request/response behavior is production-ready. Introduces the Domain Event Subscriber path described in §16.
 
 ---
 
-## 27. Implementation Status (2026-07-22)
+## 27. Implementation Status (2026-07-23)
 
-Phases 21.1 through 21.4 are implemented in `pocket-mint-be`:
+Phases 21.1 through 21.5 are implemented in `pocket-mint-be`:
 
 - **Phase 21.1 — Documentation and Contracts:** ✅ ADR (this document), canonical types, tool contracts, registry, policy evaluator.
 - **Phase 21.2 — Read-Only Assistant Foundation:** ✅ Implemented.
@@ -351,6 +367,14 @@ Phases 21.1 through 21.4 are implemented in `pocket-mint-be`:
 - **Durable audit persistence:** Deferred (per ADR §17 — structured logs only)
 - **Conversation persistence:** Implemented (Phase 21.3)
 - **Draft/commit flow:** Implemented (Phase 21.4)
+- **Deterministic context engine:** Implemented (Phase 21.5)
+- **Provider runtime:** Deferred to Phase 21.6
+
+### Phase 21.5 Context Engine Decision (2026-07-23)
+
+`AssistantContextService.buildExecutionContext` owns the four-read, owner-scoped retrieval and pure DTO assembly described in §14. `AssistantApplicationService.prepareProviderExecution` is the provider-neutral internal orchestration boundary: it accepts the authenticated User, conversation, and explicit current request, returns `AssistantContext`, and performs no tool execution or persistence. It is not connected to a controller or route.
+
+The existing Phase 21.4 `execute` path does not invoke ContextService. This intentionally avoids four unused reads and preserves current query/performance behavior until Phase 21.6 supplies a real provider consumer. Context generation is therefore implemented and integration-tested but is not yet a production request path.
 
 ### Phase 21.4 Financial Draft Decision (2026-07-22)
 
@@ -449,7 +473,7 @@ None of the following block starting Phase 21.1 or 21.2; they must be resolved b
 - Which specific analytics/read tool is the first vertical slice built against (blocks 21.2 tool selection, not the boundary itself).
 - Automatic cleanup cadence for terminal and expired drafts; command-time expiry enforcement is implemented with a 15-minute duration.
 - Whether preference memory is persisted per-User or per-conversation in a future phase (it is not part of the Phase 21.3 schema).
-- Exact allow-listed event set for §16/21.6 (blocks 21.6 only).
+- Exact allow-listed event set for §16 (blocks only the later proactive domain-event phase).
 
 ---
 
