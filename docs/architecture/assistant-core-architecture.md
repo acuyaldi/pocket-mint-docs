@@ -2,7 +2,7 @@
 
 ## 1. Status
 
-Approved for architecture. Phases 21.1 through 21.6 are implemented: contracts, deterministic execution, conversation persistence, financial drafts, bounded context assembly, and the first provider runtime. This document supersedes the informal "AI Assistant" description in [System Architecture](./system-architecture.md#ai-assistant) as the single source of truth for Assistant Core. That section now points here instead of describing the boundary independently.
+Approved for architecture. Phases 21.1 through 21.6 and Phase 22.1 are implemented: contracts, deterministic execution, conversation persistence, financial drafts, bounded context assembly, the first provider runtime, and the generic deterministic entity-resolution foundation. This document supersedes the informal "AI Assistant" description in [System Architecture](./system-architecture.md#ai-assistant) as the single source of truth for Assistant Core. That section now points here instead of describing the boundary independently.
 
 ---
 
@@ -216,6 +216,82 @@ Provider request idempotency is not part of Phase 21.6. Each HTTP request invoke
 
 `transaction.create` remains proposal-only. The model may supply only arguments accepted by the registered contract; authoritative wallet/category ownership checks remain in the draft service. The initial request creates a pending draft, zero transactions, and no wallet balance change. Natural language cannot invoke confirmation; only the authenticated draft-confirm endpoint with explicit idempotency can call the transaction domain.
 
+## 15.1. Deterministic Entity Resolution
+
+Phase 22.1 adds an internal, provider-neutral resolution boundary for future wallet, merchant, and category references. It is additive: no resolver is registered in production, no current Assistant route invokes it, and `transaction.create` behavior is unchanged. In particular, this phase does not make requests such as “beli bakso 20rb bca” work in production.
+
+The trust flow is:
+
+```text
+Provider plan proposes textual reference only
+    → Entity Resolution Service validates the closed reference contract
+    → Resolver Registry selects one statically registered resolver
+    → Resolver loads candidates with authenticated owner scope at query time
+    → Backend creates deterministic evidence and integer confidence
+    → Ambiguity Policy returns resolved / ambiguous / not_found
+    → Existing Tool Registry, policy, ownership, domain validation, and confirmation still apply
+```
+
+The closed entity types are `wallet`, `merchant`, and `category`. An untrusted `EntityReferenceInput` contains only `entityType`, `referenceText`, optional source metadata (`user_text`, `provider_extracted`, `deterministic_rule`, or `system_constraint`), and an optional bounded non-authoritative conversation reference. Exact-key validation rejects IDs, owner/User identity, evidence, confidence, lifecycle or resolution status, authorization/confirmation claims, trusted flags or constraints, prototype keys, and every other unknown field. Source classification is provenance only; it never changes validation, ownership, evidence, confidence, or ambiguity.
+
+Authenticated identity and optional trusted constraints are separate service arguments. Only backend code may create trusted constraints. A future domain resolver may use bounded constraints such as active state, capability, currency, category type, or merchant status, but it must apply them to owner-scoped candidates and may not accept a provider claim such as `trusted: true`.
+
+### Normalization policy
+
+Reference normalization is pure and byte-deterministic:
+
+1. reject non-strings, malformed surrogate input, null/C0/C1 controls other than ordinary whitespace, and bidi control characters;
+2. enforce a 256-byte UTF-8 source ceiling;
+3. apply Unicode NFKC compatibility normalization, then locale-independent `toLowerCase()`;
+4. replace Unicode punctuation and separator categories with one space, collapse whitespace, and trim;
+5. preserve digits, arbitrary scripts, and non-punctuation symbols such as emoji; do not transliterate;
+6. reject an empty result or a normalized value above 256 UTF-8 bytes.
+
+Consequently, `  BCA   Debit ` becomes `bca debit`, `Rekening\tUtama` becomes `rekening utama`, full-width `ＢＣＡ` becomes `bca`, and `BCA-DEBIT` becomes `bca debit`. Repeated separators collapse. Compatibility normalization is intentional so full-width Latin references compare consistently; visually confusable characters from other scripts are not treated as equivalent.
+
+Candidates are immutable internal projections, never Prisma models. They contain the closed entity type, an authoritative internal ID for later backend consumption, safe display label, canonical label and comparison form, normalized canonical label, bounded normalized aliases, optional safe discriminator, trusted match metadata, and a stable tie-break key. They never contain owner/User IDs, balances, account details, financial totals, credentials, audit internals, or unrelated foreign keys. Public conversion removes the internal resolved ID and internal ambiguity-selection references.
+
+### Matching, confidence, and ambiguity
+
+Only deterministic exact primitives exist in Phase 22.1:
+
+| Evidence | Fixed score |
+|---|---:|
+| Canonical exact after NFKC/case/whitespace comparison | 1000 |
+| Alias exact after the same comparison | 950 |
+| Exact equality after full punctuation/separator normalization | 900 |
+| Trusted constraint satisfied | 0, supplementary only |
+| No match | 0 |
+
+Confidence is an integer from 0 through 1000, not a probability. Score 1000 is band `exact`, 900–999 is `strong`, 1–899 is `possible`, and 0 is `none`. Resolution requires at least 900. Evidence does not accumulate to promote weak matches; the strongest fixed contribution determines confidence. Substring, token, edit-distance, phonetic, fuzzy, semantic, embedding, AI-generated alias, and learned-alias matching are absent.
+
+A candidate resolves only when it is the unique best candidate and no eligible competitor is within the inclusive 50-point ambiguity margin. Equal canonical labels, aliases, normalized labels, scores, or constraint outcomes return `ambiguous`; there is no first-row fallback. Candidates and options sort by score, stable tie-break key, internal ID, normalized canonical label, display label, and discriminator. At most five safe options are returned.
+
+The closed outcomes are `resolved`, `ambiguous`, `not_found`, `invalid_reference`, and `unsupported_entity_type`. Unknown and cross-owner-only matches are indistinguishable from `not_found`. Internal resolved results retain the authoritative candidate reference for later deterministic backend work. Provider/public projections contain only safe labels, optional safe discriminators, confidence, and minimized evidence; raw models, owner identity, financial data, and internal IDs are removed.
+
+### Resolver and operational boundaries
+
+Each asynchronous resolver declares one entity type, loads owner-scoped candidates once, and creates bounded evidence for each candidate. Production database resolvers must put authenticated owner scope in the query; loading cross-owner records and filtering in memory is forbidden. The registry permits at most one resolver per closed type, rejects duplicates and mismatches, returns registered types in stable order, and can be finalized after bootstrap. Providers cannot select modules, resolver names, methods, IDs, evidence, confidence, or ambiguity decisions.
+
+The service performs one registry lookup and one candidate load, then enforces these trusted limits:
+
+| Boundary | Limit |
+|---|---:|
+| Source reference | 256 UTF-8 bytes |
+| Normalized reference | 256 UTF-8 bytes |
+| Candidates per request | 100 |
+| Aliases per candidate | 16 |
+| Alias | 128 UTF-8 bytes |
+| Evidence items per candidate | 4 |
+| Ambiguity options | 5 |
+| Display label or discriminator | 128 UTF-8 bytes |
+
+Candidate overflow fails with a safe operational error; a future database resolver must narrow in its owner-scoped query rather than load an entire dataset. Configuration and resolver failures expose fixed safe codes and no raw reference, candidate, query, database error, or ownership signal. `ambiguous` and `not_found` are normal outcomes. The unused foundation adds no resolution logging or persistent telemetry.
+
+No option token exists in Phase 22.1 because there is no clarification consumer. A future clarification flow must re-run ownership and eligibility checks and cannot treat a selection reference or token as authorization. This phase adds no endpoint, clarification persistence, alias table, learned mapping, history table, vector table, database migration, external call, financial write, transaction creation, draft action, or production wallet/merchant/category resolver.
+
+Entity resolution supplements but never replaces authentication, the Tool Registry, policy evaluation, owner-scoped domain validation, input validation, or explicit financial confirmation.
+
 ## 16. Domain-Event Integration
 
 Deferred as an active data path in v1 (§24), but the shape is fixed now so it can be added without redesign:
@@ -373,7 +449,7 @@ Deferred until provider-backed conversational request/response behavior is produ
 
 ## 27. Implementation Status (2026-07-23)
 
-Phases 21.1 through 21.6 are implemented in `pocket-mint-be`:
+Phases 21.1 through 21.6 and the Phase 22.1 foundation are implemented in `pocket-mint-be`:
 
 - **Phase 21.1 — Documentation and Contracts:** ✅ ADR (this document), canonical types, tool contracts, registry, policy evaluator.
 - **Phase 21.2 — Read-Only Assistant Foundation:** ✅ Implemented.
@@ -386,6 +462,13 @@ Phases 21.1 through 21.6 are implemented in `pocket-mint-be`:
 - **Draft/commit flow:** Implemented (Phase 21.4)
 - **Deterministic context engine:** Implemented (Phase 21.5)
 - **Provider runtime:** Implemented (Phase 21.6)
+- **Deterministic entity-resolution foundation:** Implemented (Phase 22.1); no production domain resolver or request-path integration
+
+### Phase 22.1 Entity Resolution Decision (2026-07-23)
+
+The implementation lives under `src/assistant/entity-resolution/` as Prisma-free contracts, normalization, candidate construction, fixed exact-match evidence, integer confidence, ambiguity policy, resolver registry, orchestration service, and internal-to-public result projection. Test-only owner-partitioned fixtures prove the interface without registering a production Wallet, Merchant, or Category resolver.
+
+Phase 22.2 is the first permitted production wallet resolver and provider-reference integration point. Until that separate phase, current provider and canonical execution contracts remain unchanged, and the foundation cannot mutate financial state or resolve natural-language transaction references in production.
 
 ### Phase 21.6 Provider Runtime Decision (2026-07-23)
 
