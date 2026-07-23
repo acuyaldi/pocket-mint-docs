@@ -342,7 +342,7 @@ Phase 21.6 adds an explicitly configured provider boundary at `POST /api/v1/assi
 
 The external model call occurs after bounded context reads and before deterministic execution writes; no Prisma transaction remains open while the Backend waits for Gemini. SDK retries are disabled and generation is capped at 4,096 output tokens for this phase. A dedicated minimized provider-execution record stores operational metadata without prompts, raw context, raw responses, financial arguments, hidden reasoning, or credentials. Provider failures cannot become an empty financial answer or a successful mutation. Duplicate `/messages` submissions are independent requests and may create independent drafts; only confirmation of each individual draft is idempotent.
 
-Phase 22.1 adds an unused deterministic entity-resolution foundation for later textual wallet, merchant, and category references:
+Phases 22.1 and 22.2 add the deterministic entity-resolution foundation and its first production consumer for textual wallet references:
 
 ```text
 Provider plan with textual reference
@@ -354,7 +354,9 @@ Provider plan with textual reference
     → existing registry, policy, ownership, domain validation, and confirmation
 ```
 
-The provider may propose text only; the Backend owns eligible candidates, internal IDs, trusted constraints, evidence, confidence, ambiguity, and final resolution. The service uses NFKC normalization, fixed byte/count limits, stable sorting, exact canonical/alias/normalized matching, and bounded clarification-ready results. It performs no fuzzy or semantic matching, alias learning, provider call, persistence, or financial mutation. No production resolver or Assistant route uses it in Phase 22.1, so current transaction behavior is unchanged. Resolution never replaces authentication, owner-scoped domain validation, the Tool Registry, policy evaluation, or financial confirmation.
+The provider may propose `walletReference` text only and cannot supply a wallet ID. The Backend owns eligible candidates, internal IDs, trusted constraints, evidence, confidence, ambiguity, and final resolution. The production Wallet Resolver queries only the authenticated User's non-archived wallets at the database boundary and derives bounded exact aliases from trusted wallet names. The service uses NFKC normalization, fixed byte/count limits, stable sorting, and exact canonical/alias/normalized matching. It performs no fuzzy, substring-scored, or semantic matching, alias learning, provider call, persistent selection, or financial mutation.
+
+Only Assistant `transaction.create` invokes this resolver. A resolved wallet continues through the existing draft ownership/category validation and explicit-confirmation lifecycle. Ambiguous, missing, archived, ineligible, and cross-owner-only references create no draft and no transaction; cross-owner-only references remain `not_found`. Normal Wallet REST endpoints are unchanged. Resolution never replaces authentication, owner-scoped domain validation, the Tool Registry, policy evaluation, or financial confirmation.
 
 The full component model, lifecycles, phased roadmap, and current implementation status for this boundary are defined in [Assistant Core Architecture](./assistant-core-architecture.md), which is now the authoritative reference for Assistant Core.
 

@@ -2,7 +2,7 @@
 
 ## 1. Status
 
-Approved for architecture. Phases 21.1 through 21.6 and Phase 22.1 are implemented: contracts, deterministic execution, conversation persistence, financial drafts, bounded context assembly, the first provider runtime, and the generic deterministic entity-resolution foundation. This document supersedes the informal "AI Assistant" description in [System Architecture](./system-architecture.md#ai-assistant) as the single source of truth for Assistant Core. That section now points here instead of describing the boundary independently.
+Approved for architecture. Phases 21.1 through 21.6 and Phases 22.1 through 22.2 are implemented: contracts, deterministic execution, conversation persistence, financial drafts, bounded context assembly, the first provider runtime, the generic deterministic entity-resolution foundation, and production textual wallet resolution. This document supersedes the informal "AI Assistant" description in [System Architecture](./system-architecture.md#ai-assistant) as the single source of truth for Assistant Core. That section now points here instead of describing the boundary independently.
 
 ---
 
@@ -214,11 +214,11 @@ The current request follows the Phase 21.5 unpersisted contract. The runtime est
 
 Provider request idempotency is not part of Phase 21.6. Each HTTP request invokes the provider and deterministic path at most once, but two independent or concurrent duplicate `/messages` submissions may create two turns and two pending drafts. Draft-confirmation idempotency prevents repeated financial effects for one draft; it does not deduplicate draft creation. After a durable result, a failed metadata-only provider-audit finalization does not replace that result with a retry-triggering error; the minimized audit row can remain `STARTED` for manual investigation because no recovery worker exists.
 
-`transaction.create` remains proposal-only. The model may supply only arguments accepted by the registered contract; authoritative wallet/category ownership checks remain in the draft service. The initial request creates a pending draft, zero transactions, and no wallet balance change. Natural language cannot invoke confirmation; only the authenticated draft-confirm endpoint with explicit idempotency can call the transaction domain.
+`transaction.create` remains proposal-only. For provider execution, the model may supply a textual `walletReference` but never `walletId`; provider-plan validation rejects arguments outside the provider-visible contract before application execution. The Backend resolves that text through the production Wallet Resolver, then passes the resolved internal ID through the existing wallet/category and transaction validation. The canonical `/execute` compatibility contract still accepts `walletId` for deterministic internal callers and also accepts `walletReference`; accepting both in one request is forbidden. The initial request creates a pending draft, zero transactions, and no wallet balance change. Natural language cannot invoke confirmation; only the authenticated draft-confirm endpoint with explicit idempotency can call the transaction domain.
 
 ## 15.1. Deterministic Entity Resolution
 
-Phase 22.1 adds an internal, provider-neutral resolution boundary for future wallet, merchant, and category references. It is additive: no resolver is registered in production, no current Assistant route invokes it, and `transaction.create` behavior is unchanged. In particular, this phase does not make requests such as “beli bakso 20rb bca” work in production.
+Phase 22.1 added the internal, provider-neutral resolution boundary. Phase 22.2 registers the first production resolver for `wallet` and invokes it only from Assistant `transaction.create` execution when validated input contains `walletReference`. Normal Wallet REST endpoints and other finance-domain callers are unchanged.
 
 The trust flow is:
 
@@ -253,7 +253,7 @@ Candidates are immutable internal projections, never Prisma models. They contain
 
 ### Matching, confidence, and ambiguity
 
-Only deterministic exact primitives exist in Phase 22.1:
+Only deterministic exact primitives exist:
 
 | Evidence | Fixed score |
 |---|---:|
@@ -263,7 +263,7 @@ Only deterministic exact primitives exist in Phase 22.1:
 | Trusted constraint satisfied | 0, supplementary only |
 | No match | 0 |
 
-Confidence is an integer from 0 through 1000, not a probability. Score 1000 is band `exact`, 900–999 is `strong`, 1–899 is `possible`, and 0 is `none`. Resolution requires at least 900. Evidence does not accumulate to promote weak matches; the strongest fixed contribution determines confidence. Substring, token, edit-distance, phonetic, fuzzy, semantic, embedding, AI-generated alias, and learned-alias matching are absent.
+Confidence is an integer from 0 through 1000, not a probability. Score 1000 is band `exact`, 900–999 is `strong`, 1–899 is `possible`, and 0 is `none`. Resolution requires at least 900. Evidence does not accumulate to promote weak matches; the strongest fixed contribution determines confidence. Substring scoring, token-overlap scoring, edit-distance, phonetic, fuzzy, semantic, embedding, AI-generated alias, and learned-alias matching are absent.
 
 A candidate resolves only when it is the unique best candidate and no eligible competitor is within the inclusive 50-point ambiguity margin. Equal canonical labels, aliases, normalized labels, scores, or constraint outcomes return `ambiguous`; there is no first-row fallback. Candidates and options sort by score, stable tie-break key, internal ID, normalized canonical label, display label, and discriminator. At most five safe options are returned.
 
@@ -288,7 +288,28 @@ The service performs one registry lookup and one candidate load, then enforces t
 
 Candidate overflow fails with a safe operational error; a future database resolver must narrow in its owner-scoped query rather than load an entire dataset. Configuration and resolver failures expose fixed safe codes and no raw reference, candidate, query, database error, or ownership signal. `ambiguous` and `not_found` are normal outcomes. The unused foundation adds no resolution logging or persistent telemetry.
 
-No option token exists in Phase 22.1 because there is no clarification consumer. A future clarification flow must re-run ownership and eligibility checks and cannot treat a selection reference or token as authorization. This phase adds no endpoint, clarification persistence, alias table, learned mapping, history table, vector table, database migration, external call, financial write, transaction creation, draft action, or production wallet/merchant/category resolver.
+Phase 22.2 still creates no option token. An ambiguous or missing wallet terminates the current Assistant execution with deterministic clarification text and a public projection containing bounded safe labels, discriminators, confidence, and evidence only. Internal selection IDs are removed, no draft is created, and no option-selection protocol is introduced; that remains Phase 22.5. A later selection must re-run ownership and eligibility checks and cannot treat displayed option data as authorization.
+
+### Production Wallet Resolver
+
+The Wallet Resolver queries `Wallet` with `userId = authenticatedUserId` and `isArchived = false` in the database query itself, selecting only ID, name, type, and archive state. It never loads all wallets and filters by owner in memory. Backend-owned `transaction.create` trusted constraints are mandatory and are translated into this eligibility query; provider arguments cannot carry, weaken, or replace them. The constraint boundary is intentionally extensible for later wallet eligibility rules.
+
+Candidate canonical/display labels come from the persisted wallet name. Exact aliases are bounded, normalized components derived only from that trusted name; they are not provider-supplied, learned, fuzzy-scored, or substring-scored. Wallet type is a safe discriminator. Duplicate canonical names or aliases such as `BCA Debit` and `BCA Payroll` for reference `BCA` remain ambiguous regardless of query order.
+
+The Assistant execution sequence is:
+
+```text
+validated provider walletReference
+    → Entity Resolution Service
+    → production Wallet Resolver
+    → resolved internal wallet ID
+    → existing draft wallet/category validation
+    → PENDING_CONFIRMATION draft
+    → separate explicit confirmation
+    → existing Transaction Service
+```
+
+`not_found` covers unknown, archived, ineligible, and cross-owner-only wallets without distinction. `invalid_reference` is rejected safely. `unsupported_entity_type` and operational resolver failures cannot create a draft. No resolution outcome performs a financial mutation.
 
 Entity resolution supplements but never replaces authentication, the Tool Registry, policy evaluation, owner-scoped domain validation, input validation, or explicit financial confirmation.
 
@@ -449,7 +470,7 @@ Deferred until provider-backed conversational request/response behavior is produ
 
 ## 27. Implementation Status (2026-07-23)
 
-Phases 21.1 through 21.6 and the Phase 22.1 foundation are implemented in `pocket-mint-be`:
+Phases 21.1 through 21.6 and Phases 22.1 through 22.2 are implemented in `pocket-mint-be`:
 
 - **Phase 21.1 — Documentation and Contracts:** ✅ ADR (this document), canonical types, tool contracts, registry, policy evaluator.
 - **Phase 21.2 — Read-Only Assistant Foundation:** ✅ Implemented.
@@ -462,13 +483,18 @@ Phases 21.1 through 21.6 and the Phase 22.1 foundation are implemented in `pocke
 - **Draft/commit flow:** Implemented (Phase 21.4)
 - **Deterministic context engine:** Implemented (Phase 21.5)
 - **Provider runtime:** Implemented (Phase 21.6)
-- **Deterministic entity-resolution foundation:** Implemented (Phase 22.1); no production domain resolver or request-path integration
+- **Deterministic entity-resolution foundation:** Implemented (Phase 22.1)
+- **Production wallet resolution:** Implemented (Phase 22.2); Assistant-only `walletReference` integration with owner-scoped active-wallet querying
 
 ### Phase 22.1 Entity Resolution Decision (2026-07-23)
 
 The implementation lives under `src/assistant/entity-resolution/` as Prisma-free contracts, normalization, candidate construction, fixed exact-match evidence, integer confidence, ambiguity policy, resolver registry, orchestration service, and internal-to-public result projection. Test-only owner-partitioned fixtures prove the interface without registering a production Wallet, Merchant, or Category resolver.
 
-Phase 22.2 is the first permitted production wallet resolver and provider-reference integration point. Until that separate phase, current provider and canonical execution contracts remain unchanged, and the foundation cannot mutate financial state or resolve natural-language transaction references in production.
+### Phase 22.2 Wallet Resolution Decision (2026-07-23)
+
+The production registry now contains one Wallet Resolver. Its Prisma query applies authenticated `userId` and active-wallet eligibility before candidate materialization. It reuses the Phase 22.1 candidate, evidence, confidence, ambiguity, constraint, registry, service, and public-projection contracts without modifying their policies.
+
+The provider-visible `transaction.create` contract requires `walletReference` and exposes no `walletId`. A generic provider-argument allow-list rejects hidden compatibility fields. The application service resolves textual references before the existing financial draft service; only a `resolved` outcome supplies the internal wallet ID. Canonical deterministic callers retain `walletId` compatibility. Ambiguous and missing wallets return deterministic clarification without a draft or mutation. Merchant, Category, persistent clarification selection, conversation-aware resolution, semantic matching, and alias learning remain deferred.
 
 ### Phase 21.6 Provider Runtime Decision (2026-07-23)
 
