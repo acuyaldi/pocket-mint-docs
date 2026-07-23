@@ -342,6 +342,20 @@ Phase 21.6 adds an explicitly configured provider boundary at `POST /api/v1/assi
 
 The external model call occurs after bounded context reads and before deterministic execution writes; no Prisma transaction remains open while the Backend waits for Gemini. SDK retries are disabled and generation is capped at 4,096 output tokens for this phase. A dedicated minimized provider-execution record stores operational metadata without prompts, raw context, raw responses, financial arguments, hidden reasoning, or credentials. Provider failures cannot become an empty financial answer or a successful mutation. Duplicate `/messages` submissions are independent requests and may create independent drafts; only confirmation of each individual draft is idempotent.
 
+Phase 22.1 adds an unused deterministic entity-resolution foundation for later textual wallet, merchant, and category references:
+
+```text
+Provider plan with textual reference
+    → Entity Resolution Service
+    → statically registered resolver
+    → owner-scoped candidate retrieval
+    → deterministic exact evidence and integer confidence
+    → resolved / ambiguous / not_found
+    → existing registry, policy, ownership, domain validation, and confirmation
+```
+
+The provider may propose text only; the Backend owns eligible candidates, internal IDs, trusted constraints, evidence, confidence, ambiguity, and final resolution. The service uses NFKC normalization, fixed byte/count limits, stable sorting, exact canonical/alias/normalized matching, and bounded clarification-ready results. It performs no fuzzy or semantic matching, alias learning, provider call, persistence, or financial mutation. No production resolver or Assistant route uses it in Phase 22.1, so current transaction behavior is unchanged. Resolution never replaces authentication, owner-scoped domain validation, the Tool Registry, policy evaluation, or financial confirmation.
+
 The full component model, lifecycles, phased roadmap, and current implementation status for this boundary are defined in [Assistant Core Architecture](./assistant-core-architecture.md), which is now the authoritative reference for Assistant Core.
 
 ## Additional Automation Integrations

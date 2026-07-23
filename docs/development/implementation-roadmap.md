@@ -655,6 +655,31 @@ The current request is persisted once after planning through the existing execut
 
 ---
 
+### Phase 22 — Deterministic Entity Resolution
+
+**Purpose**
+
+Resolve future textual wallet, merchant, and category references through deterministic, owner-scoped backend code. Provider output remains an untrusted textual proposal and never becomes authoritative identity, evidence, confidence, ambiguity, ownership, or authorization.
+
+**Sub-Phases**
+
+- **22.1 — Deterministic Entity Resolution Foundation:** ✅ **Implemented.** Closed entity/reference contracts; NFKC normalization and fixed UTF-8/count limits; immutable internal candidates; exact canonical/alias/normalized evidence; 0–1000 integer confidence; conservative ambiguity policy; finalized resolver registry; owner-scoped asynchronous resolver boundary; safe internal/public result separation; and test-only multi-owner fixtures. No Prisma migration, production resolver, endpoint, provider integration, persistent option token, logging, alias learning, or financial mutation.
+- **22.2 — Wallet Resolution:** ⏳ **Pending.** Add the first production owner-scoped wallet resolver and the separately reviewed textual-reference integration. Phase 22.1 does not start this work.
+- **22.3 — Merchant Resolution:** ⏳ **Pending.**
+- **22.4 — Category Resolution:** ⏳ **Pending.**
+- **22.5 — Clarification Engine:** ⏳ **Pending.** Consume bounded ambiguity data with ownership and eligibility revalidation; option data is never authorization.
+- **22.6 — Conversation Memory Integration:** ⏳ **Pending.** Resolve conversation-aware references such as “wallet yang tadi” without semantic retrieval or hidden authority.
+
+### Phase 22.1 Implementation Note (2026-07-23)
+
+The backend module is additive under `src/assistant/entity-resolution/` and is not instantiated in production bootstrap. A closed registry selects one resolver per `wallet`, `merchant`, or `category`; a resolver receives authenticated identity separately, loads candidates once with mandatory owner scope, and returns bounded deterministic evidence. The core performs one registry lookup, validates candidate/entity alignment, applies fixed integer confidence and an inclusive 50-point ambiguity margin, sorts independently of database order, and returns no first-candidate fallback.
+
+Normalization rejects unsafe controls, bidi controls, malformed surrogates, empty results, and byte overflow; it applies NFKC, locale-independent lowercasing, Unicode punctuation/separator replacement, whitespace collapse, and trimming while preserving digits, scripts, and symbols. Full-width `ＢＣＡ` becomes `bca`; `BCA-DEBIT` becomes `bca debit`.
+
+The production registry has no Wallet, Merchant, or Category resolver. Phase 22.1 therefore adds no query, schema change, migration, transaction behavior, clarification endpoint, live provider call, frontend, channel, embedding, fuzzy matching, semantic retrieval, or later-phase behavior. Smart categorization and merchant mapping remain unchanged; their merchant-specific prefix/number stripping and contains/token confidence semantics are deliberately not reused for authoritative generic resolution.
+
+---
+
 ## Cross Repository Order
 
 ```text
