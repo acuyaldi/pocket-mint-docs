@@ -340,7 +340,7 @@ Deferred until conversational request/response behavior (21.1–21.5) is product
 
 ## 27. Implementation Status (2026-07-22)
 
-Phases 21.1 through 21.3 are implemented in `pocket-mint-be`:
+Phases 21.1 through 21.4 are implemented in `pocket-mint-be`:
 
 - **Phase 21.1 — Documentation and Contracts:** ✅ ADR (this document), canonical types, tool contracts, registry, policy evaluator.
 - **Phase 21.2 — Read-Only Assistant Foundation:** ✅ Implemented.
@@ -350,7 +350,15 @@ Phases 21.1 through 21.3 are implemented in `pocket-mint-be`:
 - **LLM provider:** Not yet integrated
 - **Durable audit persistence:** Deferred (per ADR §17 — structured logs only)
 - **Conversation persistence:** Implemented (Phase 21.3)
-- **Draft/commit flow:** Deferred (Phase 21.4)
+- **Draft/commit flow:** Implemented (Phase 21.4)
+
+### Phase 21.4 Financial Draft Decision (2026-07-22)
+
+`transaction.create` accepts only regular `INCOME` and `EXPENSE` inputs and initially creates a typed `AssistantFinancialDraft`; it cannot create a financial transaction. The normalized columns are transaction type, `Decimal(15,2)` amount, owner-scoped wallet/category IDs, normalized transaction date, and optional description. Arbitrary raw request JSON is not stored. Draft states are `PENDING_CONFIRMATION → COMMITTED|CANCELLED|EXPIRED|FAILED`, with a shared 15-minute expiry constant enforced at command time and no cleanup worker.
+
+Explicit confirmation uses `POST /api/v1/assistant/drafts/:draftId/confirm` with a bounded `Idempotency-Key`. A parameterized PostgreSQL advisory transaction lock serializes each draft; `(userId, key)` is database-unique and `transactionId` is unique on the draft. The confirmation transaction creates the confirmation turn and minimized execution audit, calls the authoritative transaction service with the same Prisma transaction client, applies the wallet effect once, links the transaction, and marks the draft committed. Exact replay and a new key on a committed draft return the original transaction; key reuse across drafts conflicts. Cancellation is a separate durable turn and is idempotent only for an already-cancelled draft.
+
+Assistant history can be deleted without cascading to finance data, while restrictive transaction foreign keys prevent deletion of an authoritative transaction that still backs a committed draft or successful idempotency record. There is no external call in the commit boundary and therefore no external crash window. An unexpected database failure rolls back the entire confirmation. A known transaction-domain rejection occurs before any financial mutation or idempotency success and is then recorded as `FAILED` in a separate transaction. If that secondary history write fails, the draft can remain pending, but the API returns no false success and performs no automatic retry; any later explicit retry remains governed by the same lifecycle and idempotency rules.
 
 ### Phase 21.3 Persistence Decision (2026-07-22)
 
@@ -428,7 +436,7 @@ Tool execution uses `Promise.race` with a registered timeout. The timeout **stop
 
 The error wording accurately reflects this: "The Assistant stopped waiting for the tool result."
 
-The current timeout implementation is suitable only for **read-only** Phase 21.2 tools. Future mutation tools (Phase 21.4+) must use idempotency keys and abort-aware behavior before timeout/retry semantics are considered safe.
+The timeout wrapper remains suitable only for read-only tools. Phase 21.4 mutations do not use it: confirmation is a dedicated database transaction with a required idempotency key and no automatic retry.
 
 ### Output Validation
 
@@ -439,7 +447,7 @@ Tool output is validated at the boundary. Non-finite values (`NaN`, `Infinity`, 
 None of the following block starting Phase 21.1 or 21.2; they must be resolved before the phase that depends on them:
 
 - Which specific analytics/read tool is the first vertical slice built against (blocks 21.2 tool selection, not the boundary itself).
-- Draft expiry duration and cleanup cadence (blocks 21.4 commit behavior).
+- Automatic cleanup cadence for terminal and expired drafts; command-time expiry enforcement is implemented with a 15-minute duration.
 - Whether preference memory is persisted per-User or per-conversation in a future phase (it is not part of the Phase 21.3 schema).
 - Exact allow-listed event set for §16/21.6 (blocks 21.6 only).
 

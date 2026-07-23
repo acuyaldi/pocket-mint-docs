@@ -331,6 +331,8 @@ A Notification Service consumes committed outcomes and approved reminder signals
 
 An AI Assistant combines a conversational Frontend with a backend-owned coordination boundary. It may query authorized, minimized read models and explain backend-provided calculations. Any proposed mutation is structured, validated, shown with its consequence, and confirmed according to product policy before Business Services commit it. The assistant cannot answer missing-history questions by inventing records or present general model output as financial advice or canonical truth.
 
+The first implemented mutation flow stages `transaction.create` as a durable 15-minute draft. Only a separate authenticated confirmation with a database-backed idempotency key may invoke the existing Transaction Service; cancellation and expiration have no ledger or wallet effect. The Assistant stores lifecycle/audit summaries, while Transaction and Wallet records remain authoritative.
+
 The full component model, lifecycles, phased roadmap, and current implementation status for this boundary are defined in [Assistant Core Architecture](./assistant-core-architecture.md), which is now the authoritative reference for Assistant Core.
 
 ## Additional Automation Integrations

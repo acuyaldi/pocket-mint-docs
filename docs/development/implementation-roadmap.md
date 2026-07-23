@@ -572,7 +572,7 @@ Build the conversational Assistant boundary defined in [Assistant Core Architect
 - **21.1 — Documentation and Contracts:** ADR (complete), canonical Assistant types, initial tool contract, risk/confirmation enums, lifecycle state definitions. ✅ **Complete.** Module at `src/assistant/` in `pocket-mint-be`. Canonical contracts: `ToolContract`, `ExecutionContext`, `PolicyResult`, `ToolRegistry`, `evaluatePolicy`. First tool: `analytics.monthly-spending-summary` (LOW risk, read-only, no confirmation). Validation via minimal internal validators (no Zod/Joi — compatible with adopting them later).
 - **21.2 — Read-Only Assistant Foundation:** ✅ **Implemented.** Provider-neutral canonical request/response, correlation ID middleware, deterministic intent resolver, consolidated executor/tool-router, tool handler wired to existing `transactionQueryService` + `analyticsCategoriesService`, deterministic Indonesian response renderer, HTTP endpoint `POST /v1/assistant/execute`, structured audit logging via existing logger. **No LLM provider integrated.** Conversation persistence and draft persistence remain deferred. Durable audit persistence remains deferred.
 - **21.3 — Conversation Persistence:** ✅ **Implemented.** User-owned conversations, canonical messages with source provenance, explicit request turns, minimized durable tool-execution history, bounded ownership-scoped retrieval, and idempotent archive. Automatic expiration and permanent deletion remain deferred pending an approved retention policy.
-- **21.4 — First Financial Draft Flow:** **Next.** `transaction.create` draft → preview → confirm → commit through the existing transaction service, with idempotency and audit history.
+- **21.4 — First Financial Draft Flow:** ✅ **Implemented.** `transaction.create` creates a 15-minute owner-scoped draft only; dedicated confirm/cancel endpoints enforce explicit confirmation, database-backed idempotency, PostgreSQL draft locking, atomic reuse of the existing transaction service, and minimized lifecycle audit history. Transfers, installments, providers, channels, frontend work, and automatic stale-draft cleanup remain out of scope.
 - **21.5 — Bounded Multi-Tool Workflows:** added only after 21.2–21.4 are stable.
 - **21.6 — Proactive Domain-Event Workflows:** deferred until conversational request/response behavior is production-ready.
 
@@ -628,7 +628,7 @@ Build the conversational Assistant boundary defined in [Assistant Core Architect
 - No frontend chat
 - No conversation/message Prisma tables
 - No draft persistence
-- No transaction creation through Assistant
+- No transaction creation through the Phase 21.2 read-only intent; Phase 21.4 adds only explicitly confirmed draft commits
 - No general planner or workflow DAG
 - No semantic memory
 - No preference persistence
