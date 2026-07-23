@@ -2,13 +2,13 @@
 
 ## 1. Status
 
-Approved for architecture. Phases 21.1 through 21.6 and Phases 22.1 through 22.2 are implemented: contracts, deterministic execution, conversation persistence, financial drafts, bounded context assembly, the first provider runtime, the generic deterministic entity-resolution foundation, and production textual wallet resolution. This document supersedes the informal "AI Assistant" description in [System Architecture](./system-architecture.md#ai-assistant) as the single source of truth for Assistant Core. That section now points here instead of describing the boundary independently.
+Approved for architecture. Phases 21.1 through 21.6 and Phases 22.1 through 22.3 are implemented: contracts, deterministic execution, conversation persistence, financial drafts, bounded context assembly, the first provider runtime, the generic deterministic entity-resolution foundation, and production textual wallet and merchant resolution. This document supersedes the informal "AI Assistant" description in [System Architecture](./system-architecture.md#ai-assistant) as the single source of truth for Assistant Core. That section now points here instead of describing the boundary independently.
 
 ---
 
 ## 2. Context
 
-Pocket Mint v0.5.0 is stable. Core Finance, Authentication, Wallets, Transactions, Categories, Monthly Category Budgeting, Saving Goals, Recurring Transactions, Notifications, Analytics v2, CSV Export, Smart Categorization, Merchant Mapping, the Rule Engine, i18n, and frontend stabilization are complete.
+Pocket Mint v0.5.0 is stable. Core Finance, Authentication, Wallets, Transactions, Categories, Monthly Category Budgeting, Saving Goals, Recurring Transactions, Notifications, Analytics v2, CSV Export, Smart Categorization, Merchant Mapping, i18n, and frontend stabilization are complete. The current backend preserves a documented Rule Engine insertion point but does not yet implement that stage.
 
 The product vision has extended from an expense tracker to an AI-first Personal Finance Assistant that minimizes financial friction and maximizes financial clarity. Pocket Mint remains the financial system of record; the Assistant is an interaction and orchestration layer, not an owner of financial logic.
 
@@ -214,11 +214,11 @@ The current request follows the Phase 21.5 unpersisted contract. The runtime est
 
 Provider request idempotency is not part of Phase 21.6. Each HTTP request invokes the provider and deterministic path at most once, but two independent or concurrent duplicate `/messages` submissions may create two turns and two pending drafts. Draft-confirmation idempotency prevents repeated financial effects for one draft; it does not deduplicate draft creation. After a durable result, a failed metadata-only provider-audit finalization does not replace that result with a retry-triggering error; the minimized audit row can remain `STARTED` for manual investigation because no recovery worker exists.
 
-`transaction.create` remains proposal-only. For provider execution, the model may supply a textual `walletReference` but never `walletId`; provider-plan validation rejects arguments outside the provider-visible contract before application execution. The Backend resolves that text through the production Wallet Resolver, then passes the resolved internal ID through the existing wallet/category and transaction validation. The canonical `/execute` compatibility contract still accepts `walletId` for deterministic internal callers and also accepts `walletReference`; accepting both in one request is forbidden. The initial request creates a pending draft, zero transactions, and no wallet balance change. Natural language cannot invoke confirmation; only the authenticated draft-confirm endpoint with explicit idempotency can call the transaction domain.
+`transaction.create` remains proposal-only. For provider execution, the model supplies textual `walletReference` and `merchantReference` values but never wallet, merchant, or Merchant Mapping identifiers; provider-plan validation rejects arguments outside the provider-visible contract before application execution. The Backend resolves those texts through the production Wallet and Merchant Resolvers, then passes only the resolved wallet ID and safe merchant label through existing validation. The canonical `/execute` compatibility contract retains `walletId` and optional `merchantReference` for deterministic internal callers. The initial request creates a pending draft, zero transactions, and no wallet balance change. Natural language cannot invoke confirmation; only the authenticated draft-confirm endpoint with explicit idempotency can call the transaction domain.
 
 ## 15.1. Deterministic Entity Resolution
 
-Phase 22.1 added the internal, provider-neutral resolution boundary. Phase 22.2 registers the first production resolver for `wallet` and invokes it only from Assistant `transaction.create` execution when validated input contains `walletReference`. Normal Wallet REST endpoints and other finance-domain callers are unchanged.
+Phase 22.1 added the internal, provider-neutral resolution boundary. Phase 22.2 registers the production `wallet` resolver, and Phase 22.3 registers the production `merchant` resolver. Both are invoked only from Assistant `transaction.create` execution when the corresponding validated textual reference exists. Normal Wallet and Merchant Mapping REST endpoints and other finance-domain callers are unchanged.
 
 The trust flow is:
 
@@ -310,6 +310,18 @@ validated provider walletReference
 ```
 
 `not_found` covers unknown, archived, ineligible, and cross-owner-only wallets without distinction. `invalid_reference` is rejected safely. `unsupported_entity_type` and operational resolver failures cannot create a draft. No resolution outcome performs a financial mutation.
+
+### Production Merchant Resolver
+
+The schema has no standalone `Merchant` entity and `Transaction` has no merchant identity column. Merchant identity exists only as free-form transaction `description`, while `MerchantMapping` is a user-owned `merchantName → categoryId` mapping with a unique `(userId, normalizedMerchant)` key. Phase 22.3 therefore introduces no speculative Merchant or alias table and uses the narrowest trusted candidate source: the authenticated User's Merchant Mapping rows.
+
+Candidate retrieval filters `MerchantMapping.userId = authenticatedUserId` in the database query and selects only internal mapping ID, safe display `merchantName`, and trusted `normalizedMerchant`, bounded to 101 rows so the generic 100-candidate limit fails closed. There is no global candidate source, cross-user fallback, transaction-history scan, archived/inactive state, or public mapping ID. Cross-user-only references remain `not_found` and cannot affect ambiguity.
+
+The resolver uses `merchantName` as canonical/display label and the persisted `normalizedMerchant` as its single trusted normalized alias. Candidate construction then applies the Phase 22.1 NFKC and safety validation. This deliberately does not import Smart Categorization's prefix stripping, trailing-number stripping, contains/token matching, or confidence semantics into authoritative resolution. Those normalization rules remain authoritative only when Merchant Mapping rows are created and when the advisory categorization pipeline queries them.
+
+Merchant ambiguity returns bounded safe labels without mapping IDs and creates no draft. Merchant `not_found` is different from wallet `not_found`: because known merchant identity is optional in the transaction domain, a validated normalized reference continues as inert free-form merchant text. It becomes the draft/transaction description only when no explicit description exists; otherwise explicit description remains authoritative and the merchant label is preview-only. Unsafe markup/control text is rejected rather than stored.
+
+Merchant Resolver never reads or returns the mapping's category, so it cannot become a categorization engine. Existing responsibility remains one-directional: Merchant Mapping supplies a trusted merchant representation to resolution and separately supplies advisory category suggestions. Phase 22.3 does not overwrite manual `categoryId`, auto-assign a mapping category, change Merchant Mapping-before-keyword precedence, implement the reserved Rule Engine stage, or alter confidence policy. Category Resolution remains Phase 22.4.
 
 Entity resolution supplements but never replaces authentication, the Tool Registry, policy evaluation, owner-scoped domain validation, input validation, or explicit financial confirmation.
 
@@ -470,7 +482,7 @@ Deferred until provider-backed conversational request/response behavior is produ
 
 ## 27. Implementation Status (2026-07-23)
 
-Phases 21.1 through 21.6 and Phases 22.1 through 22.2 are implemented in `pocket-mint-be`:
+Phases 21.1 through 21.6 and Phases 22.1 through 22.3 are implemented in `pocket-mint-be`:
 
 - **Phase 21.1 — Documentation and Contracts:** ✅ ADR (this document), canonical types, tool contracts, registry, policy evaluator.
 - **Phase 21.2 — Read-Only Assistant Foundation:** ✅ Implemented.
@@ -485,6 +497,7 @@ Phases 21.1 through 21.6 and Phases 22.1 through 22.2 are implemented in `pocket
 - **Provider runtime:** Implemented (Phase 21.6)
 - **Deterministic entity-resolution foundation:** Implemented (Phase 22.1)
 - **Production wallet resolution:** Implemented (Phase 22.2); Assistant-only `walletReference` integration with owner-scoped active-wallet querying
+- **Production merchant resolution:** Implemented (Phase 22.3); Assistant-only `merchantReference` integration with owner-scoped Merchant Mapping querying and safe free-form fallback
 
 ### Phase 22.1 Entity Resolution Decision (2026-07-23)
 
@@ -495,6 +508,12 @@ The implementation lives under `src/assistant/entity-resolution/` as Prisma-free
 The production registry now contains one Wallet Resolver. Its Prisma query applies authenticated `userId` and active-wallet eligibility before candidate materialization. It reuses the Phase 22.1 candidate, evidence, confidence, ambiguity, constraint, registry, service, and public-projection contracts without modifying their policies.
 
 The provider-visible `transaction.create` contract requires `walletReference` and exposes no `walletId`. A generic provider-argument allow-list rejects hidden compatibility fields. The application service resolves textual references before the existing financial draft service; only a `resolved` outcome supplies the internal wallet ID. Canonical deterministic callers retain `walletId` compatibility. Ambiguous and missing wallets return deterministic clarification without a draft or mutation. Merchant, Category, persistent clarification selection, conversation-aware resolution, semantic matching, and alias learning remain deferred.
+
+### Phase 22.3 Merchant Resolution Decision (2026-07-23)
+
+The production registry now contains exactly one Merchant Resolver in addition to the unchanged Wallet Resolver. The resolver queries only authenticated owner-scoped `MerchantMapping` rows and uses `merchantName` plus persisted `normalizedMerchant`; it exposes no mapping/category/owner ID and creates no data. No Prisma schema or migration is required.
+
+Provider `transaction.create` now requires `merchantReference` and rejects merchant identifiers, ownership claims, provider confidence/evidence, and unknown fields. A unique match supplies only a safe canonical label. Ambiguity returns safe options and no draft. `not_found` preserves the bounded normalized text as optional free-form merchant data because the current transaction domain has no required Merchant identity. Mapping categories never flow through resolution, so manual category input and the existing advisory Merchant Mapping then keyword behavior are unchanged; the reserved Rule Engine and Phase 22.4 Category Resolution remain pending.
 
 ### Phase 21.6 Provider Runtime Decision (2026-07-23)
 
