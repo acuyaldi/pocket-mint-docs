@@ -2,7 +2,7 @@
 
 ## 1. Status
 
-Approved for architecture. Phases 21.1 (Documentation and Contracts), 21.2 (Read-Only Assistant Foundation), and 21.3 (Conversation Persistence) are implemented. This document supersedes the informal "AI Assistant" description in [System Architecture](./system-architecture.md#ai-assistant) as the single source of truth for Assistant Core. That section now points here instead of describing the boundary independently.
+Approved for architecture. Phases 21.1 through 21.6 are implemented: contracts, deterministic execution, conversation persistence, financial drafts, bounded context assembly, and the first provider runtime. This document supersedes the informal "AI Assistant" description in [System Architecture](./system-architecture.md#ai-assistant) as the single source of truth for Assistant Core. That section now points here instead of describing the boundary independently.
 
 ---
 
@@ -202,6 +202,18 @@ Provider SDK → Provider Adapter → Canonical Assistant Request / Tool Call �
 
 Everything on the Assistant Core side of the adapter — stored conversations, messages, tool calls, execution plans, tool results, draft state, audit state — is provider-neutral. Only the adapter knows OpenAI/Anthropic/Gemini-specific message and tool formats. Swapping or adding a provider means writing one adapter; nothing else changes.
 
+Phase 21.6 implements exactly one adapter with the official `@google/genai` SDK. It requests JSON with a closed response schema, passes client cancellation and a bounded HTTP timeout, and sets SDK retry attempts to one. The production entry point is the explicitly configured `POST /api/v1/assistant/messages`; the canonical `/execute` endpoint remains available and never invokes a provider implicitly. Provider failover, routing, automatic retry, streaming, tool loops, and multi-step agents remain deferred.
+
+The provider-visible capability catalog is derived from enabled Tool Registry entries in stable intent order. It contains only public intent ID, description, safe required/optional argument metadata, capability category, and confirmation possibility. Handler names, risk/policy internals, database models, source paths, owners, and unrestricted schemas never enter the catalog.
+
+The deterministic system instruction remains separate from one labelled JSON data message containing historical turns, prior safe tool summaries, optional pending draft context, and the current request. Every retrieved value is untrusted content, including previous Assistant text, merchant/category/wallet names, descriptions, and draft previews. Text such as "ignore previous instructions" remains quoted data and cannot modify the catalog, schema, registry lookup, validation, policy, or confirmation boundary.
+
+Structured provider output has exactly `kind`, `intent`, `arguments`, `clarification`, and `userMessage`. Validation rejects unknown fields/kinds/intents, malformed arguments, arrays in object positions, ownership/authorization/lifecycle claims, confirmation claims, hidden reasoning keys, prototype keys, excessive nesting, output above 32 KiB, and unsafe clarification text. The backend then resolves the intent through the registry, reruns its existing argument contract, evaluates existing policy, and delegates to the existing application service. Provider prose never replaces deterministic read results, draft previews, policy failures, or mutation outcomes.
+
+The current request follows the Phase 21.5 unpersisted contract. The runtime establishes or validates an empty/owned conversation, calls `prepareProviderExecution` once with the unpersisted request, and invokes the provider outside every database transaction. A validated intent is delegated to the existing execution path, which persists the request exactly once; clarification, unsupported, and provider-failure branches each create one non-tool turn and also persist it exactly once.
+
+`transaction.create` remains proposal-only. The model may supply only arguments accepted by the registered contract; authoritative wallet/category ownership checks remain in the draft service. The initial request creates a pending draft, zero transactions, and no wallet balance change. Natural language cannot invoke confirmation; only the authenticated draft-confirm endpoint with explicit idempotency can call the transaction domain.
+
 ## 16. Domain-Event Integration
 
 Deferred as an active data path in v1 (§24), but the shape is fixed now so it can be added without redesign:
@@ -214,7 +226,7 @@ Domain events never call Assistant-specific code directly. Only an explicit allo
 
 ## 17. Auditability and Correlation Requirements
 
-Every tool invocation is audited with actor, origin, tool identifier, input/output summary, outcome, and a correlation ID that ties one conversation turn to its resolved intent, workflow, tool calls, and (if applicable) draft/commit. This is the same auditing obligation [System Architecture §Auditing](./system-architecture.md) already places on every consequential operation — Assistant Core does not get a separate audit model.
+Every deterministic tool invocation is audited with actor, origin, tool identifier, minimized input/output summary, outcome, and correlation ID. Provider calls use a separate Assistant-owned `AssistantProviderExecution` record because a model request is not a financial tool execution. It stores only provider/model, status, timing, byte counts, normalized finish classification, safe error code, optional provider-neutral token totals, and owner/conversation/optional turn references. It has no prompt, context, message, arguments, raw request/response, hidden reasoning, header, credential, vendor request ID, or raw SDK error field.
 
 ---
 
@@ -222,14 +234,17 @@ Every tool invocation is audited with actor, origin, tool identifier, input/outp
 
 ```text
 Channel Adapter receives message
-    → Conversation Manager loads/creates conversation
-    → Intent Resolver (via Provider Adapter) resolves intent
+    → Conversation Manager ownership-validates or creates an empty conversation
+    → Context Engine appends the unpersisted current request exactly once
+    → deterministic system instruction and registry-derived catalog assembled
+    → Provider Adapter returns one structured proposal
+    → strict plan validation resolves registry contract and policy
     → Bounded Workflow selects required tool(s)
     → Execution Engine dispatches
     → Risk and Policy Gate decides immediate-execute vs. draft
     → Tool Router validates against canonical contract, calls Domain Service
     → Domain Service executes under existing authorization/transaction rules
-    → Result recorded to Audit Log
+    → minimized provider and deterministic execution outcomes recorded separately
     → Response Renderer produces user-facing text
     → Conversation Manager persists turn
 ```
@@ -346,7 +361,7 @@ Deterministic owner-scoped conversation retrieval, provider-neutral context DTOs
 
 ### Phase 21.6 — Provider Runtime
 
-First production consumer of the Phase 21.5 context engine. Provider integration remains behind the provider-neutral adapter and must not alter context ownership, minimization, or financial authority boundaries.
+Implemented as the first production consumer of the Phase 21.5 context engine. Provider integration remains behind the provider-neutral adapter and does not alter context ownership, minimization, registry/policy enforcement, or financial authority boundaries.
 
 ### Later Phase — Proactive Domain-Event Workflows
 
@@ -356,25 +371,33 @@ Deferred until provider-backed conversational request/response behavior is produ
 
 ## 27. Implementation Status (2026-07-23)
 
-Phases 21.1 through 21.5 are implemented in `pocket-mint-be`:
+Phases 21.1 through 21.6 are implemented in `pocket-mint-be`:
 
 - **Phase 21.1 — Documentation and Contracts:** ✅ ADR (this document), canonical types, tool contracts, registry, policy evaluator.
 - **Phase 21.2 — Read-Only Assistant Foundation:** ✅ Implemented.
 - **Route:** `POST /api/v1/assistant/execute` (authenticated, allow-listed intents)
 - **First supported intent:** `analytics.monthly-spending-summary`
 - **Deterministic renderer:** Indonesian text output
-- **LLM provider:** Not yet integrated
-- **Durable audit persistence:** Deferred (per ADR §17 — structured logs only)
+- **LLM provider:** Gemini through the official `@google/genai` adapter, explicitly configured
+- **Durable audit persistence:** Minimized tool and provider execution records
 - **Conversation persistence:** Implemented (Phase 21.3)
 - **Draft/commit flow:** Implemented (Phase 21.4)
 - **Deterministic context engine:** Implemented (Phase 21.5)
-- **Provider runtime:** Deferred to Phase 21.6
+- **Provider runtime:** Implemented (Phase 21.6)
+
+### Phase 21.6 Provider Runtime Decision (2026-07-23)
+
+`POST /api/v1/assistant/messages` is opt-in and does not alter `/assistant/execute`. With `ASSISTANT_PROVIDER=gemini`, `ASSISTANT_MODEL`, and `GEMINI_API_KEY`, it consumes the Phase 21.5 context exactly once, invokes one provider call with SDK retries disabled, validates the structured proposal, and delegates known intents through the existing application service. Missing enabled configuration fails startup safely; normal tests require no key.
+
+The runtime keeps system rules separate from labelled untrusted context. Strict validation bounds response bytes, object depth, clarification/model text, rejects hidden reasoning and prototype/ownership/authorization/confirmation fields, and ignores provider prose for authoritative results. A dedicated minimized provider audit stores operational metadata and optional neutral usage totals but no request/response content. External model latency never occurs inside a Prisma transaction.
+
+`transaction.create` continues to prepare only a pending draft. Provider output cannot confirm it, mark it successful, or bypass wallet/category ownership checks. The unchanged explicit confirmation endpoint is the only path to the Transaction Service.
 
 ### Phase 21.5 Context Engine Decision (2026-07-23)
 
 `AssistantContextService.buildExecutionContext` owns the four-read, owner-scoped retrieval and pure DTO assembly described in §14. `AssistantApplicationService.prepareProviderExecution` is the provider-neutral internal orchestration boundary: it accepts the authenticated User, conversation, and explicit current request, returns `AssistantContext`, and performs no tool execution or persistence. It is not connected to a controller or route.
 
-The existing Phase 21.4 `execute` path does not invoke ContextService. This intentionally avoids four unused reads and preserves current query/performance behavior until Phase 21.6 supplies a real provider consumer. Context generation is therefore implemented and integration-tested but is not yet a production request path.
+The existing Phase 21.4 `execute` path still does not invoke ContextService. The Phase 21.6 `/messages` runtime is the sole production consumer, preserving canonical execute performance and an explicit external-provider boundary.
 
 ### Phase 21.4 Financial Draft Decision (2026-07-22)
 

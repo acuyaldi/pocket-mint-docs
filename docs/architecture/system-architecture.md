@@ -338,6 +338,10 @@ An AI Assistant combines a conversational Frontend with a backend-owned coordina
 
 The first implemented mutation flow stages `transaction.create` as a durable 15-minute draft. Only a separate authenticated confirmation with a database-backed idempotency key may invoke the existing Transaction Service; cancellation and expiration have no ledger or wallet effect. The Assistant stores lifecycle/audit summaries, while Transaction and Wallet records remain authoritative.
 
+Phase 21.6 adds an explicitly configured provider boundary at `POST /api/v1/assistant/messages`. The Backend assembles bounded Phase 21.5 context and a registry-derived capability catalog, calls the single Gemini adapter with structured output, and treats the result as an untrusted intent proposal. The adapter has no Prisma or domain-service dependency. Registry lookup, argument validation, policy, ownership, draft preparation, deterministic rendering, and explicit confirmation remain inside the Backend.
+
+The external model call occurs after bounded context reads and before deterministic execution writes; no Prisma transaction remains open while the Backend waits for Gemini. SDK retries are disabled for this phase. A dedicated minimized provider-execution record stores operational metadata without prompts, raw context, raw responses, financial arguments, hidden reasoning, or credentials. Provider failures cannot become an empty financial answer or a successful mutation.
+
 The full component model, lifecycles, phased roadmap, and current implementation status for this boundary are defined in [Assistant Core Architecture](./assistant-core-architecture.md), which is now the authoritative reference for Assistant Core.
 
 ## Additional Automation Integrations
