@@ -2,7 +2,7 @@
 
 ## 1. Status
 
-Approved for architecture. Phases 21.1 through 21.6 and Phases 22.1 through 22.4 are implemented: contracts, deterministic execution, conversation persistence, financial drafts, bounded context assembly, the first provider runtime, the generic deterministic entity-resolution foundation, and production textual wallet, merchant, and category resolution. This document supersedes the informal "AI Assistant" description in [System Architecture](./system-architecture.md#ai-assistant) as the single source of truth for Assistant Core. That section now points here instead of describing the boundary independently.
+Approved for architecture. Phases 21.1 through 21.6 and Phases 22.1 through 22.4 are implemented: contracts, deterministic execution, conversation persistence, financial drafts, bounded context assembly, the first provider runtime, the generic deterministic entity-resolution foundation, and production textual wallet, merchant, and category resolution. Phase 22.5 (Persistent Clarification Engine) is in progress: the aggregate, lifecycle, sequential continuation, expiry, and authenticated HTTP select/cancel endpoints (Tasks 1–6 of the implementation plan) are implemented and verified against PostgreSQL; documentation alignment (Task 7, this update) is underway and final verification/merge (Task 8) has not started — see § 27 for the current status. This document supersedes the informal "AI Assistant" description in [System Architecture](./system-architecture.md#ai-assistant) as the single source of truth for Assistant Core. That section now points here instead of describing the boundary independently.
 
 ---
 
@@ -341,6 +341,108 @@ The production registry contains exactly one each of Wallet, Merchant, and Categ
 
 Entity resolution supplements but never replaces authentication, the Tool Registry, policy evaluation, owner-scoped domain validation, input validation, or explicit financial confirmation.
 
+## 15.2. Persistent Clarification Engine
+
+Phase 22.5 replaces the Phase 22.2–22.4 behavior of terminating execution on `ambiguous`/missing wallet, merchant, or category with a persisted, resumable clarification. It exists so an ambiguous entity reference can pause Assistant execution safely and resume later from an explicit, deterministic User choice — never from provider re-interpretation, and never with any financial effect before confirmation.
+
+**Purpose:** deterministic resolution of ambiguous financial entities; safe pause/resume of Assistant execution across HTTP requests; explicit User authority over which candidate is selected; no provider authority over clarification selection; replay-safe continuation under concurrent or retried requests.
+
+**Scope:** the implemented entity sequence is
+
+```text
+wallet
+    ↓
+merchant
+    ↓
+category
+    ↓
+pending financial draft
+```
+
+The exact path taken depends on which entities the initial request already resolved unambiguously; only an entity that is ambiguous or (for wallet/category) missing creates a clarification, and merchant `not_found` continues as free-form text exactly as in Phase 22.3, without a clarification.
+
+### Core aggregate
+
+Two Prisma models, additive to the schema (`prisma/schema.prisma`):
+
+- **`ClarificationRequest`** — `id`, `userId`, `conversationId`, `originatingTurnId`, `executionId` (unique), `parentId` (self-relation, nullable — set on a child created by a prior selection), `entityType`, `status` (`AssistantClarificationStatus`), `trustedContext` (`Json`), `prompt`, `terminalCode`, `restartRequired`, `expiresAt`, `consumedAt`, `cancelledAt`, `createdAt`, `updatedAt`.
+- **`ClarificationOption`** — `id`, `requestId`, `tokenDigest` (unique per request), `displayLabel`, `discriminator`, `candidateId`, `createdAt`.
+
+`parentId` chains a child clarification (created after a selection resolves one entity but leaves another ambiguous) back to its predecessor. `trustedContext` is the canonical, immutable transaction-create context (amount, type, date, description, and already-resolved wallet/merchant/category — see `CanonicalContext` in `src/assistant/clarification.types.ts`); it is built only from already-validated `TransactionCreateToolInput` and never copies provider confidence, evidence, or metadata. `candidateId` on each option is the internal candidate reference used for revalidation at selection time — it is never returned to a client.
+
+### Token model
+
+- A raw token (`clarify_` prefix plus 32 bytes of `node:crypto` `randomBytes`, base64url-encoded) is issued once per option, only in the creation response.
+- Only its SHA-256 digest is persisted (`ClarificationOption.tokenDigest`); the raw token is never logged, snapshotted, or stored anywhere.
+- There is no token recovery or reissue path. A lost token cannot be recovered from conversation state — the User must cancel or wait for expiry and let the ambiguity resolve again from a fresh request.
+- Selection authority requires both a scoped clarification ID (from the URL path) and the raw token in the request body; neither alone is sufficient.
+- Digest comparison happens only after lifecycle and expiry checks succeed — an expired or terminal clarification never reveals whether a given token would otherwise have matched.
+
+### Lifecycle
+
+`AssistantClarificationStatus` is `PENDING | CONSUMED | CANCELLED | STALE` — there is no separate `EXPIRED` enum value. Expiry is represented as `STALE` with `terminalCode = 'expired'`; `STALE` with a different `terminalCode` (e.g. `context_invalid`, `continuation_invalid`) covers a clarification that failed structural or continuation validation at selection time. This is an intentional, narrower surface than early planning sketches, which enumerated `EXPIRED` as a distinct status — the two are collapsed because both are "this request can no longer be acted on and a restart is required," and callers already have to branch on `terminalCode` for the other `STALE` reasons.
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING
+    PENDING --> CONSUMED: valid token, still within expiry
+    PENDING --> CANCELLED: explicit cancel
+    PENDING --> STALE: expiry reached (terminalCode=expired)
+    PENDING --> STALE: context/continuation invalid at selection (terminalCode=context_invalid|continuation_invalid)
+    CONSUMED --> [*]
+    CANCELLED --> [*]
+    STALE --> [*]
+```
+
+`CONSUMED`, `CANCELLED`, and `STALE` are terminal and immutable. Repeated selection or cancellation against a terminal row returns that row's actual deterministic outcome rather than re-deriving one: a repeat cancel against `CANCELLED` returns the same success; a repeat select against any terminal state returns its specific error (§ API boundary). An invalid option token against a still-`PENDING` request does not consume it — the request remains selectable. A downstream failure after a successful token match (e.g. a failed child-clarification or draft write) rolls back the whole transaction, including the claim, so the same token remains valid for a retry.
+
+### Sequential continuation
+
+A selection that resolves one entity but leaves the next (wallet → merchant → category) ambiguous creates exactly one child `ClarificationRequest` with `parentId` set to the consumed request's ID. The immutable parts of `trustedContext` (amount, type, date, description, and any already-resolved entity) carry forward unchanged into the child; only the newly-ambiguous entity's candidates change. Selected wallet and merchant identity are treated as authoritative for the rest of the chain — a later step never re-derives or overrides them. Category is always resolved independently against the trusted transaction type; a merchant mapping's associated category is never used to silently authorize the category step (this mirrors the unchanged Phase 22.3/22.4 boundary that Merchant Mapping's `categoryName → categoryId` relationship is advisory-only and separate from resolution authority). A given selection produces exactly one of: one child clarification, or one pending draft — never both, never neither. The provider is never re-invoked during continuation; only the trusted, already-persisted context and freshly re-validated candidates drive the next step.
+
+### Transaction boundary
+
+Within clarification continuation (`POST .../select`), the same interactive Prisma transaction is used for: the atomic `PENDING → CONSUMED` claim, revalidation of the selected candidate and any already-resolved prerequisite entity, authoritative merchant/category entity resolution for the remaining steps, child-clarification creation (or pending-draft preparation), and Assistant lifecycle persistence (turn/execution/message rows), ending with the parent's final status transition. Selected entity resolvers (`revalidateSelectedCandidate`, the wallet/merchant/category resolver queries) accept an optional transaction-client override precisely so they can run against this same client instead of the module-level Prisma client. Nested transactions are avoided — `runInTransaction` reuses a caller-supplied client instead of opening a new one when the caller (the application service) is already inside a transaction.
+
+This is narrower than "every Assistant lifecycle operation is one transaction": the **initial** wallet resolution for a brand-new `transaction.create` request happens before any clarification exists, outside a clarification transaction, exactly as in Phase 22.2. Only *continuation* (a selection against an existing `PENDING` clarification) is transaction-aware in this sense. A transient failure anywhere inside the continuation transaction rolls back the claim along with everything else, leaving the clarification `PENDING` and the token retryable.
+
+### Concurrency
+
+The claim is a guarded conditional update (`UPDATE ... WHERE id = ? AND status = 'PENDING'`), not a `SELECT ... FOR UPDATE` held across application logic. Under a same-token race, exactly one caller's update affects a row; every other caller observes zero rows affected and re-reads the row to report the actual terminal outcome (whichever transition won). This holds for select/select races (two different tokens against the same request), select/cancel races, and expiry races (a select landing after the expiry moment loses to the expiry terminalization). Across every race, exactly one child clarification or draft is created, never a financial `Transaction`, and never a wallet-balance change. These guarantees are exercised by PostgreSQL integration tests that fire concurrent same-token and different-option requests against a real database.
+
+### Expiry
+
+Every clarification (parent or child) gets its own 15-minute TTL (`CLARIFICATION_TTL_MS`), computed from database time (`SELECT now() AT TIME ZONE 'UTC'`), never the application process clock. A child created by a selection receives a fresh 15-minute window; a parent's expiry is never extended by a later selection attempt. Expiry is resolved and, if reached, terminalized to `STALE`/`expired` *before* the supplied token is ever hashed and compared — an expired request never confirms or denies whether a token would have matched. An expired or otherwise terminal request creates no child clarification and no draft. Existing rows created before the expiry migration were backfilled (see § Schema and migration history) rather than left with a null `expiresAt`.
+
+### Safety invariants
+
+- Zero financial `Transaction` rows are created by clarification creation, selection, or cancellation — only a `PENDING_CONFIRMATION` draft, at most.
+- No wallet balance is mutated by any clarification operation.
+- The provider is never re-run during continuation, and there is no provider-facing clarification-selection tool — selection is HTTP-only and token-based.
+- Ownership mismatch (clarification belongs to another User) and "not found" are indistinguishable responses.
+- Conversation mismatch (clarification belongs to a different conversation than the one in the URL) is likewise indistinguishable from "not found."
+- `tokenDigest`, `candidateId`, and `trustedContext` are internal persistence fields; they are never included in any public projection (`ClarificationProjection`, `AssistantStateProjection`, error responses, or logs).
+
+### API boundary
+
+- `POST /assistant/conversations/:conversationId/clarifications/:clarificationId/select`
+- `POST /assistant/conversations/:conversationId/clarifications/:clarificationId/cancel`
+
+Select accepts exactly one body key, `{ "optionToken": string }` (non-empty after trimming); cancel accepts an empty body. Both reject any other shape — extra keys, arrays, wrong types — with a safe `400 BAD_REQUEST` before touching the database. Full request/response shapes, the terminal-status/error-code table, and the safe `assistantState` projection are documented in [`docs/api/assistant-conversations.md`](../api/assistant-conversations.md) (backend repository), which is the canonical API-contract source for these routes.
+
+### Known limitations
+
+- No raw-token recovery or reissue; a lost token requires cancelling (or waiting for expiry) and re-resolving the ambiguity from a new request.
+- Conversation state cannot restore a lost option token — it only exposes safe labels, never tokens or digests.
+- Selection requires the explicit token; there is no natural-language ("the second one") selection path.
+- No frontend clarification UI yet.
+- No Telegram, Discord, WhatsApp, or other external-channel integration.
+- No n8n or external orchestration.
+- No external-channel identity mapping.
+- No provider-mediated selection of any kind.
+- Clarification resolution only ever produces a pending draft; explicit confirmation through `POST /drafts/:draftId/confirm` remains a separate, required step.
+- Initial wallet resolution for a brand-new request happens before any clarification transaction exists (§ Transaction boundary) — this is an accepted scope boundary, not a defect.
+
 ## 16. Domain-Event Integration
 
 Deferred as an active data path in v1 (§24), but the shape is fixed now so it can be added without redesign:
@@ -515,6 +617,7 @@ Phases 21.1 through 21.6 and Phases 22.1 through 22.4 are implemented in `pocket
 - **Production wallet resolution:** Implemented (Phase 22.2); Assistant-only `walletReference` integration with owner-scoped active-wallet querying
 - **Production merchant resolution:** Implemented (Phase 22.3); Assistant-only `merchantReference` integration with owner-scoped Merchant Mapping querying and safe free-form fallback
 - **Production category resolution:** Implemented (Phase 22.4); provider-only `categoryReference`, owner/type-scoped read-only Category querying, deterministic `categoryId` compatibility, and Category-name-only Assistant previews
+- **Persistent Clarification Engine:** In progress (Phase 22.5); Tasks 1–6 implemented and PostgreSQL-verified (persisted `ClarificationRequest`/`ClarificationOption` aggregate, digest-only single-use tokens, `PENDING/CONSUMED/CANCELLED/STALE` lifecycle, database-time 15-minute expiry represented as `STALE`/`expired`, wallet → merchant → category → draft sequential continuation inside one shared transaction, and authenticated deterministic `select`/`cancel` HTTP endpoints); Task 7 (this documentation pass) is underway; Task 8 (final full-suite verification and merge) has not started — see § 15.2
 
 ### Phase 22.1 Entity Resolution Decision (2026-07-23)
 
@@ -539,6 +642,19 @@ The production registry now contains exactly one Category Resolver in addition t
 Provider `transaction.create` now requires `categoryReference` and exposes no Category identifier. The canonical deterministic contract accepts exactly one of textual `categoryReference` or compatibility `categoryId`; compatibility IDs bypass textual resolution but retain draft and Transaction Service owner/type revalidation. Category ambiguity or `not_found` persists one clarification lifecycle and creates no financial draft, Transaction, or balance change. Explicit references never fall back to Merchant Mapping category data or Smart Categorization keywords.
 
 Draft preparation selects authoritative Category name during its existing owner/type query. Structured and rendered Assistant previews expose that name and no Category ID; only the pending draft stores the ID needed for separate confirmation. No schema or migration changed, default-category seeding is never invoked, and an unseeded User can receive `not_found`. Phase 22.4 adds no Rule Engine, Clarification Engine, persistent option token, conversation-aware resolution, Category API, frontend work, or Phase 22.5 behavior.
+
+### Phase 22.5 Clarification Engine Decision (2026-07-25, in progress)
+
+The full design is § 15.2. In summary: two additive Prisma models (`ClarificationRequest`, `ClarificationOption`) persist ambiguity across requests instead of terminating execution, gated by `AssistantClarificationStatus = PENDING | CONSUMED | CANCELLED | STALE` — no separate `EXPIRED` value; expiry is `STALE` with `terminalCode = 'expired'`. Selection is single-use, digest-only (SHA-256 of a random 32-byte token, raw token never persisted), and scoped to an explicit clarification ID plus token — never a candidate index or natural-language choice. A successful selection either creates exactly one child clarification (fresh 15-minute TTL, immutable context carried forward) or exactly one `PENDING_CONFIRMATION` draft, inside one interactive transaction shared with the atomic claim, prerequisite/candidate revalidation, and Assistant lifecycle persistence. The provider is never re-invoked during continuation, and there is no provider-facing selection tool.
+
+Deviations from the original implementation-plan sketch, and why: the plan's draft sketch proposed a distinct `EXPIRED` enum value and a `ClarificationOption`-adjacent unique `AssistantFinancialDraft.clarificationRequestId` lineage column; the shipped design instead reuses `STALE` + `terminalCode` for expiry (one fewer branch for every caller that already switches on `terminalCode`) and does not add a draft-side FK, since the draft is already uniquely reachable through the consumed clarification's continuation result and the conversation-scoped `assistantState` projection — a redundant column would need its own uniqueness and backfill story for no additional safety. Authenticated deterministic HTTP `select`/`cancel` endpoints (Task 6) and this documentation pass (Task 7) are complete; Task 8 (repeated full verification, tracked `dist`/Prisma artifact regeneration, and the no-stage/no-commit boundary check) has not started, so Phase 22.5 is **not yet marked fully implemented** — only Tasks 1–7 are.
+
+### Schema and migration history (Phase 22.5)
+
+Two additive PostgreSQL migrations, applied in order, neither editing the other:
+
+- `20260724000000_add_clarification_engine` — creates `clarification_requests` and `clarification_options`, the `AssistantClarificationStatus` enum, their foreign keys (including the `parent_id` self-relation), and supporting indexes. No raw token column exists; only `token_digest` is stored.
+- `20260725000000_add_clarification_expiry` — adds `clarification_requests.expires_at`, backfills every existing row to `created_at + 15 minutes`, then makes the column `NOT NULL`. This is the only way to add a required expiry column without breaking rows that already existed from the first migration; no new enum value was introduced for it.
 
 ### Phase 21.6 Provider Runtime Decision (2026-07-23)
 
