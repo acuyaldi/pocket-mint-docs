@@ -2,7 +2,7 @@
 
 ## 1. Status
 
-Approved for architecture. Phases 21.1 through 21.6 and Phases 22.1 through 22.4 are implemented: contracts, deterministic execution, conversation persistence, financial drafts, bounded context assembly, the first provider runtime, the generic deterministic entity-resolution foundation, and production textual wallet, merchant, and category resolution. Phase 22.5 (Persistent Clarification Engine) is in progress: the aggregate, lifecycle, sequential continuation, expiry, and authenticated HTTP select/cancel endpoints (Tasks 1–6 of the implementation plan) are implemented and verified against PostgreSQL; documentation alignment (Task 7, this update) is underway and final verification/merge (Task 8) has not started — see § 27 for the current status. This document supersedes the informal "AI Assistant" description in [System Architecture](./system-architecture.md#ai-assistant) as the single source of truth for Assistant Core. That section now points here instead of describing the boundary independently.
+Approved for architecture. Phases 21.1 through 21.6 and Phases 22.1 through 22.4 are implemented: contracts, deterministic execution, conversation persistence, financial drafts, bounded context assembly, the first provider runtime, the generic deterministic entity-resolution foundation, and production textual wallet, merchant, and category resolution. Phase 22.5 (Persistent Clarification Engine) is in progress: the aggregate, lifecycle, sequential continuation, expiry, and authenticated HTTP select/cancel endpoints (Tasks 1–6 of the implementation plan) are implemented and verified against PostgreSQL; documentation alignment (Task 7, this update) is underway and final verification/merge (Task 8) has not started — see § 27 for the current status. Phase 23.5 (Assistant Resilience & Recovery) adds one authoritative, read-only recovery projection over already-persisted state — see § 15.3 — so a browser refresh does not strand a user's pending clarification or draft; it introduces no new clarification or draft business logic. This document supersedes the informal "AI Assistant" description in [System Architecture](./system-architecture.md#ai-assistant) as the single source of truth for Assistant Core. That section now points here instead of describing the boundary independently.
 
 ---
 
@@ -433,7 +433,7 @@ Select accepts exactly one body key, `{ "optionToken": string }` (non-empty afte
 ### Known limitations
 
 - No raw-token recovery or reissue; a lost token requires cancelling (or waiting for expiry) and re-resolving the ambiguity from a new request.
-- Conversation state cannot restore a lost option token — it only exposes safe labels, never tokens or digests.
+- Conversation state cannot restore a lost option token — it only exposes safe labels, never tokens or digests. Since Phase 23.5, `GET .../recovery-state` (§ 15.3) exposes exactly this safe projection over HTTP, so a client that lost its in-memory clarification/draft state (e.g. after a refresh) can rediscover *that* one is pending and cancel it, without ever recovering a usable token.
 - Selection requires the explicit token; there is no natural-language ("the second one") selection path.
 - No frontend clarification UI yet.
 - No Telegram, Discord, WhatsApp, or other external-channel integration.
@@ -442,6 +442,40 @@ Select accepts exactly one body key, `{ "optionToken": string }` (non-empty afte
 - No provider-mediated selection of any kind.
 - Clarification resolution only ever produces a pending draft; explicit confirmation through `POST /drafts/:draftId/confirm` remains a separate, required step.
 - Initial wallet resolution for a brand-new request happens before any clarification transaction exists (§ Transaction boundary) — this is an accepted scope boundary, not a defect.
+
+## 15.3. Conversation Recovery Projection
+
+Phase 23.5 closes the one recovery gap frontend-only remediation could not close: after a browser refresh, `GET /assistant/conversations/:conversationId` never returns `outputSummary`/`redactedInput` (by design — see § 14), so a turn that produced a still-`PENDING_CONFIRMATION` draft is indistinguishable from any other `SUCCEEDED` turn. There was no existing endpoint that could tell the client "a draft or clarification is still waiting on this conversation" — `getAssistantState` (§ Core aggregate references) existed as an internal service function computing exactly this projection, but was never routed to HTTP. Every other resilience gap audited in Phase 23.5 (ambiguous retry outcomes, expired/consumed clarification tokens, duplicate confirm/cancel, auth expiry mid-mutation) was already resolvable from the existing conversation-history and idempotency contracts and needed no backend change.
+
+**Route:** `GET /assistant/conversations/:conversationId/recovery-state` — same `requireUser` authentication, same ownership check, and the same `404 ASSISTANT_CONVERSATION_NOT_FOUND` for a nonexistent, malformed, or another user's conversation ID as the existing conversation-detail route (no existence leak, no new error code).
+
+**Response** (`AssistantStateProjection`, all fields optional and independently absent when nothing is active):
+
+```jsonc
+{
+  "activeClarification": { // present only if a PENDING clarification exists
+    "clarificationId": "...", "entityType": "wallet|merchant|category",
+    "prompt": "...", "options": [{ "label": "...", "discriminator": "..." }],
+    "expiresAt": "..."
+  },
+  "pendingDraft": { // present only if a PENDING_CONFIRMATION draft exists
+    "draftId": "...", "status": "PENDING_CONFIRMATION",
+    "preview": { "operation": "...", "type": "INCOME|EXPENSE", "amount": "...",
+                 "walletId": "...", "categoryId": "...", "date": "YYYY-MM-DD",
+                 "description": "...", "expiresAt": "..." }
+  },
+  "latestTerminalClarification": { // present only if the most recent clarification is terminal
+    "clarificationId": "...", "entityType": "...",
+    "status": "CONSUMED|CANCELLED|STALE", "terminalCode": "...", "restartRequired": true
+  }
+}
+```
+
+**Security boundary:** this is a pure read projection over data already persisted for other reasons (§ Core aggregate, § Draft and Confirmation Lifecycle) — it adds no new table, no new write path, and no new authority. It never returns a raw clarification token or `tokenDigest` (raw tokens are never stored server-side at all, per § Token model, so there is nothing to leak) and never returns wallet/category display names, only the same `walletId`/`categoryId` references the draft-creation response already exposes. Consequently `activeClarification.options` can drive a read-only "here's what you were asked" display and a `cancel` call (which only needs `clarificationId`) — never a `select` call, since no token is recoverable this way. This preserves the § Token model invariant that a lost token has no recovery or reissue path: the client can discover *that* a clarification is pending and cancel it, never *resume selecting an option* on it.
+
+**Expiry and replay:** the projection reflects live lifecycle state at read time — it is not itself cached, versioned, or replay-protected, and carries no idempotency semantics of its own (it is a GET with no side effects). A `pendingDraft`/`activeClarification` that expires between two polls simply stops appearing; the client discovers this the same way it always did, via the terminal error codes returned by the confirm/select/cancel routes themselves (§ API boundary, § Draft and Confirmation Lifecycle).
+
+**Backward compatibility:** purely additive — no existing route, status code, or response shape changed. A client that never calls this route observes no behavior change.
 
 ## 16. Domain-Event Integration
 
