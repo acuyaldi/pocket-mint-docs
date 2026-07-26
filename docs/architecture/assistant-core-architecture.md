@@ -2,7 +2,7 @@
 
 ## 1. Status
 
-Approved for architecture. Phases 21.1 through 21.6 and Phases 22.1 through 22.4 are implemented: contracts, deterministic execution, conversation persistence, financial drafts, bounded context assembly, the first provider runtime, the generic deterministic entity-resolution foundation, and production textual wallet, merchant, and category resolution. Phase 22.5 (Persistent Clarification Engine) is in progress: the aggregate, lifecycle, sequential continuation, expiry, and authenticated HTTP select/cancel endpoints (Tasks 1–6 of the implementation plan) are implemented and verified against PostgreSQL; documentation alignment (Task 7, this update) is underway and final verification/merge (Task 8) has not started — see § 27 for the current status. Phase 23.5 (Assistant Resilience & Recovery) adds one authoritative, read-only recovery projection over already-persisted state — see § 15.3 — so a browser refresh does not strand a user's pending clarification or draft; it introduces no new clarification or draft business logic. This document supersedes the informal "AI Assistant" description in [System Architecture](./system-architecture.md#ai-assistant) as the single source of truth for Assistant Core. That section now points here instead of describing the boundary independently.
+Approved for architecture. Phases 21.1 through 21.6 and Phases 22.1 through 22.4 are implemented: contracts, deterministic execution, conversation persistence, financial drafts, bounded context assembly, the first provider runtime, the generic deterministic entity-resolution foundation, and production textual wallet, merchant, and category resolution. Phase 22.5 (Persistent Clarification Engine) is in progress: the aggregate, lifecycle, sequential continuation, expiry, and authenticated HTTP select/cancel endpoints (Tasks 1–6 of the implementation plan) are implemented and verified against PostgreSQL; documentation alignment (Task 7, this update) is underway and final verification/merge (Task 8) has not started — see § 27 for the current status. Phase 23.5 (Assistant Resilience & Recovery) adds one authoritative, read-only recovery projection over already-persisted state — see § 15.3 — so a browser refresh does not strand a user's pending clarification or draft; it introduces no new clarification or draft business logic. Phase 25 (External Channel Foundation — Telegram, [PD-014](../product/decisions/014-telegram-channel-foundation.md)) implements the Channel Adapter component (§6/§7) for the first time: a Telegram webhook reaches the Assistant through the same `assistantProviderRuntime`/`assistantApplicationService` boundary the web frontend uses, gated by an ownership-scoped, digest-only identity-linking flow — see § 15.4. This document supersedes the informal "AI Assistant" description in [System Architecture](./system-architecture.md#ai-assistant) as the single source of truth for Assistant Core. That section now points here instead of describing the boundary independently.
 
 ---
 
@@ -102,7 +102,7 @@ Domain Event Subscriber is deferred (§24) and omitted from the v1 diagram.
 
 | Component | Owns | Does not own |
 |---|---|---|
-| Channel Adapter | Transport-level request/response for a given surface (web chat, future mobile) | Business logic, provider calls |
+| Channel Adapter | Transport-level request/response for a given surface (web chat; Telegram as of Phase 25, see [PD-014](../product/decisions/014-telegram-channel-foundation.md)) | Business logic, provider calls |
 | Conversation Manager | Conversation lifecycle, turn sequencing, loading/saving conversation state | Tool execution, financial rules |
 | Intent Resolver | Turning a message plus context into a provider-neutral intent | Database access, authorization, confirmation reduction |
 | Bounded Workflow | Deterministic step sequencing for a supported intent | Autonomous planning, DB access |
@@ -436,9 +436,8 @@ Select accepts exactly one body key, `{ "optionToken": string }` (non-empty afte
 - Conversation state cannot restore a lost option token — it only exposes safe labels, never tokens or digests. Since Phase 23.5, `GET .../recovery-state` (§ 15.3) exposes exactly this safe projection over HTTP, so a client that lost its in-memory clarification/draft state (e.g. after a refresh) can rediscover *that* one is pending and cancel it, without ever recovering a usable token.
 - Selection requires the explicit token; there is no natural-language ("the second one") selection path.
 - No frontend clarification UI yet.
-- No Telegram, Discord, WhatsApp, or other external-channel integration.
+- As of Phase 25 ([PD-014](../product/decisions/014-telegram-channel-foundation.md)), Telegram exists as a channel, but it does not implement clarification-option selection or draft confirmation itself — a Telegram user is directed to the web app for both, exactly as this section's option-token/digest model intends. No Discord, WhatsApp, or other external-channel integration exists.
 - No n8n or external orchestration.
-- No external-channel identity mapping.
 - No provider-mediated selection of any kind.
 - Clarification resolution only ever produces a pending draft; explicit confirmation through `POST /drafts/:draftId/confirm` remains a separate, required step.
 - Initial wallet resolution for a brand-new request happens before any clarification transaction exists (§ Transaction boundary) — this is an accepted scope boundary, not a defect.
@@ -476,6 +475,20 @@ Phase 23.5 closes the one recovery gap frontend-only remediation could not close
 **Expiry and replay:** the projection reflects live lifecycle state at read time — it is not itself cached, versioned, or replay-protected, and carries no idempotency semantics of its own (it is a GET with no side effects). A `pendingDraft`/`activeClarification` that expires between two polls simply stops appearing; the client discovers this the same way it always did, via the terminal error codes returned by the confirm/select/cancel routes themselves (§ API boundary, § Draft and Confirmation Lifecycle).
 
 **Backward compatibility:** purely additive — no existing route, status code, or response shape changed. A client that never calls this route observes no behavior change.
+
+## 15.4. Telegram Channel (Phase 25)
+
+Phase 25 ([PD-014](../product/decisions/014-telegram-channel-foundation.md)) implements the Channel Adapter component (§6/§7) for the first time, using Telegram as the first external channel. Full rationale, alternatives, and consequences live in PD-014; this section only summarizes the shape of the implementation so it can be found from the same place as every other Assistant Core component.
+
+**Boundary:** `src/channels/` (provider-agnostic identity linking: `ChannelLinkToken`, `ChannelConnection`, `ChannelUpdateDedup`) and `src/telegram/` (transport-only adapter: webhook schema validation, command parsing, outbound delivery). Neither contains a second tool registry, policy engine, or confirmation mechanism — a linked Telegram user's plain-text message is passed, unmodified, to `assistantProviderRuntime.sendMessage(userId, correlationId, { message, conversationId? })`, the same call the web-facing `POST /assistant/messages` route makes.
+
+**Identity resolution:** `Telegram externalUserId → ChannelConnection → userId`, never the reverse and never from message content. `ChannelConnection` carries the "current" conversation id for that chat (set after the first message creates one, cleared by `/new`), so the Assistant's `conversationId` scoping (§14) applies identically regardless of transport.
+
+**Confirmation/clarification boundary preserved:** a Telegram reply is classified from the same `AssistantApplicationResult`/`AssistantProviderRuntimeResult` shape the web client receives. A `clarification_required` status or a `confirmationRequired: true` draft never reaches Telegram as data — the user gets one fixed instruction to continue on the web app. No draft payload, clarification option, or token is ever rendered into a Telegram message.
+
+**Update authenticity and replay:** Telegram's shared secret header gates the webhook route before any parsing; `ChannelUpdateDedup`'s unique constraint on `(provider, externalUpdateId)` makes a retried delivery a database-enforced no-op rather than a best-effort guard.
+
+See PD-014 for the full decision record, the Telegram Security doc for the threat-model-level detail, and the Telegram Deployment Runbook for operational procedures.
 
 ## 16. Domain-Event Integration
 
