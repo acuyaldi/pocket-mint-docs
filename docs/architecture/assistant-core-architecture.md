@@ -491,6 +491,8 @@ Domain events never call Assistant-specific code directly. Only an explicit allo
 
 Every deterministic tool invocation is audited with actor, origin, tool identifier, minimized input/output summary, outcome, and correlation ID. Provider calls use a separate Assistant-owned `AssistantProviderExecution` record because a model request is not a financial tool execution. It stores only provider/model, status, timing, byte counts, normalized finish classification, safe error code, optional provider-neutral token totals, and owner/conversation/optional turn references. It has no prompt, context, message, arguments, raw request/response, hidden reasoning, header, credential, vendor request ID, or raw SDK error field.
 
+This is the durable database-backed audit trail (`AssistantToolExecution`/`AssistantProviderExecution`), distinct from the *operational* structured-log layer added in Phase 24 (Assistant Production Observability Foundation, [PD-013](../product/decisions/013-assistant-observability-foundation.md)): a canonical, allowlisted lifecycle event taxonomy (`assistant.message.*`, `assistant.provider.*`, `assistant.tool.*`, `assistant.draft.*`, `assistant.clarification.*`, `assistant.recovery.*`) and a bounded error-category classification, correlated by the same per-request correlation ID used here, emitted to the application log (not the database) for production debugging and log-based metrics. See `pocket-mint-be/docs/observability-runbook.md` for the operational reference and `pocket-mint-be/.claude/skills/assistant-core.skill.md` §13 for the implementation-level field/event contract.
+
 ---
 
 ## 18. Request Lifecycle
@@ -561,6 +563,7 @@ Confirmation always targets an explicit draft ID; there is no implicit "confirm 
 - Draft state never becomes a bypass for authorization: commit re-verifies ownership at commit time, not just at draft-creation time.
 - Context given to the provider is minimized to what a turn needs, consistent with [System Architecture §Privacy](./system-architecture.md).
 - No response path exposes internal stack traces, raw provider details, or audit internals to the User.
+- Operational logs (Phase 24, [PD-013](../product/decisions/013-assistant-observability-foundation.md)) never contain user message text, Assistant response text, clarification option labels/values, clarification tokens, draft payloads, financial amounts, merchant/wallet/category names, idempotency keys, or provider prompts/completions — enforced by a closed-field event type at the logging call site plus a runtime key-fragment redaction backstop, not by convention alone.
 
 ---
 
