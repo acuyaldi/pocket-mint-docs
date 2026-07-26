@@ -751,6 +751,51 @@ Give the Assistant Core boundary a durable, structured way to answer production 
 
 ---
 
+### Phase 25 — External Channel Foundation (Telegram)
+
+**Purpose**
+
+Establish a secure, auditable, channel-agnostic boundary for reaching the Assistant from outside the web frontend, using Telegram as the first external channel. The goal is the foundation — identity linking, a canonical inbound envelope, replay-safe deduplication, and reuse of the existing Assistant application boundary — not a full reproduction of the web clarification/confirmation UX over Telegram.
+
+**Repositories**
+
+- `pocket-mint-docs` (this note, plus [PD-014 — Telegram Channel Foundation](../product/decisions/014-telegram-channel-foundation.md), the new [Assistant Core Architecture § 15.4](../architecture/assistant-core-architecture.md#154-telegram-channel-phase-25), and [Telegram Security](../architecture/telegram-security.md) / [Telegram Deployment Runbook](./telegram-deployment-runbook.md)).
+- `pocket-mint-be` — schema (`ChannelLinkToken`, `ChannelConnection`, `ChannelUpdateDedup`), `src/channels/` (provider-agnostic linking boundary), `src/telegram/` (webhook, client, envelope, commands, dedup), the authenticated linking API (`/channels/telegram/*`), and the public webhook route (`/telegram/webhook`).
+- `pocket-mint-fe` — one bounded addition: a `TelegramConnectionCard` on the existing `/profile` page (generate a linking code, view status, disconnect). No new route, no integrations marketplace.
+
+**Dependencies**
+
+- Phase 21 (Assistant Core) — Telegram invokes `assistantProviderRuntime.sendMessage`/`assistantApplicationService.execute` directly; it does not change their contracts.
+- Phase 22.5 (Persistent Clarification Engine, [PD-012](../product/decisions/012-persistent-clarification-engine.md)) and Phase 24 (Assistant Production Observability Foundation) — Telegram reuses their confirmation/clarification boundary and structured-logging conventions unchanged.
+- Numbered independently of Phase 23 (Assistant Resilience & Recovery, documented only in the architecture doc as of this writing) and Phase 24 (Assistant Production Observability Foundation) — no numbering collision was found against either.
+
+**Scope — Implemented**
+
+- Telegram webhook ingestion (`POST /api/v1/telegram/webhook`) — the first public, non-JWT-gated route in this backend — protected by a shared secret header (`X-Telegram-Bot-Api-Secret-Token`, constant-time compared) and an IP-keyed rate limiter.
+- Digest-only, one-time, 10-minute `ChannelLinkToken` issued from an authenticated web session and consumed via `/link <code>` in Telegram, with database-level uniqueness preventing identity transfer between Pocket Mint accounts.
+- `ChannelConnection` mapping `(provider, externalUserId) → userId`, one active connection per user per provider, tracking the "current" Assistant conversation for that chat.
+- Authoritative `ChannelUpdateDedup` claim on `(provider, externalUpdateId)` so a retried Telegram delivery cannot cause a duplicate Assistant turn.
+- Canonical `InboundChannelMessage` envelope; private-chat-only topology (groups, supergroups, channels, edited messages, callback queries, and non-text content are all safely ignored).
+- Deterministic commands: `/start`, `/link <code>`, `/help`, `/new`, `/status`, `/unlink`.
+- Plain-text Assistant replies relayed verbatim; a financial draft or clarification-required outcome instead receives one fixed, bounded "continue on the web app" message (Scope A — no Telegram-side confirmation or clarification-option selection).
+- Structured `channel.*` observability events, following the existing `logEvent`/`AssistantLogEvent`-style bounded-field convention, correlated by the request's correlation ID.
+- Authenticated linking API (`POST /channels/telegram/link-token`, `GET /channels/telegram/connection`, `POST /channels/telegram/revoke`) and a minimal frontend card to use it.
+- An operator-run webhook registration script (`scripts/telegram-set-webhook.mjs`); no automatic registration at application boot.
+
+**Scope — Explicitly not done**
+
+- Discord, WhatsApp, n8n, or any other external channel/orchestration.
+- Telegram group/supergroup/channel support, media, voice, location, contact sharing, inline queries.
+- Scope B (Telegram-native inline-button draft confirmation or clarification-option selection) — deferred pending proven product need.
+- A queue or background-job system — this backend has none; the webhook is processed synchronously, with the update-dedup table as the safety net for retried deliveries.
+- A general notification platform or a provider-agnostic channel database abstraction beyond what Telegram proved necessary.
+
+**Risk**
+
+- **Low-to-moderate:** the first genuinely public route in this backend, so webhook-secret verification and rate limiting were reviewed carefully; the first time an external, unauthenticated principal's message reaches the Assistant, so identity-linking uniqueness and ownership scoping were verified under PostgreSQL concurrency (concurrent token consumption, concurrent duplicate-update delivery). No existing Assistant confirmation/clarification/idempotency behavior was changed — Telegram reuses it unmodified.
+
+---
+
 ## Cross Repository Order
 
 ```text
