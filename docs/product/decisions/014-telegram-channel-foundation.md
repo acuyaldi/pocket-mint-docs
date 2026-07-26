@@ -4,6 +4,14 @@
 **Date:** 2026-07-26
 **Author:** Agent (Phase 25 implementation)
 
+> **Update (Phase 26B):** The synchronous webhook processing described below
+> was the deliberate, time-boxed v1 tradeoff this decision names in its own
+> "Alternatives considered" and "Costs" sections. It has been superseded by
+> [PD-015 — Durable Channel Processing](015-durable-channel-processing.md),
+> which replaces it with a durable Postgres-backed inbox/outbox pipeline. The
+> context and reasoning below remain an accurate record of Phase 25 as
+> originally shipped — read PD-015 for the current processing model.
+
 ## Context
 
 The Assistant has only ever been reachable from the Pocket Mint web frontend. PD-012 (§ "Explicitly out of scope") and the Assistant Core Architecture doc (§15.2, §26) both listed Telegram/Discord/WhatsApp and external-channel identity mapping as deliberately unbuilt — the Channel Adapter box in the architecture's component model (§6/§7) has, until now, been a diagram entry with no implementation.

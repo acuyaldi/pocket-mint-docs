@@ -794,6 +794,49 @@ Establish a secure, auditable, channel-agnostic boundary for reaching the Assist
 
 - **Low-to-moderate:** the first genuinely public route in this backend, so webhook-secret verification and rate limiting were reviewed carefully; the first time an external, unauthenticated principal's message reaches the Assistant, so identity-linking uniqueness and ownership scoping were verified under PostgreSQL concurrency (concurrent token consumption, concurrent duplicate-update delivery). No existing Assistant confirmation/clarification/idempotency behavior was changed — Telegram reuses it unmodified.
 
+> **Update (Phase 26B):** the "no queue/background-job system" line above described Phase 25 as originally shipped. It no longer reflects the current state — see Phase 26B below, which replaces synchronous processing with a durable pipeline. This section is left as an accurate historical record of what Phase 25 actually shipped.
+
+---
+
+### Phase 26B — Durable Channel Processing
+
+**Purpose**
+
+Replace Phase 25's synchronous Telegram webhook processing with a Postgres-backed inbox/outbox pipeline, per the upgrade path PD-014 explicitly documented: webhook acknowledgment, Assistant execution, and outbound Telegram delivery become independently durable, retryable, and crash-safe stages, before Telegram gains any interactive clarification/confirmation capability.
+
+**Repositories**
+
+- `pocket-mint-docs` (this note, plus [PD-015 — Durable Channel Processing](../product/decisions/015-durable-channel-processing.md) and the updated [Telegram Deployment Runbook](./telegram-deployment-runbook.md)).
+- `pocket-mint-be` — schema (`ChannelUpdateDedup` evolved in place into `ChannelInboundJob`, plus new `ChannelOutboundDelivery` and `ChannelAssistantOperation`), `src/channels/workers/` (claim, retry, loop, inbound/outbound workers, operation-identity guard), refactored `src/telegram/telegram.service.ts` (persist-and-acknowledge only), `src/channels/retention.ts`.
+- `pocket-mint-fe` — untouched. No confirmed user-visible delivery-state requirement was identified in discovery.
+
+**Dependencies**
+
+- Phase 25 (External Channel Foundation) — this phase evolves its dedup table and reuses its identity-linking, envelope, and command boundaries unchanged.
+- No new external dependency (no Redis, queue platform, or dedicated worker process).
+
+**Scope — Implemented**
+
+- Webhook shrinks to bounded transport work: verify, parse, resolve connection, persist `ChannelInboundJob`, acknowledge — no Assistant or Telegram call in the request path.
+- One inbound worker: database-authoritative claim (`FOR UPDATE SKIP LOCKED`), command handling, Assistant invocation guarded by a new operation-identity table so a reclaimed job never re-invokes the Assistant, and outbound delivery creation.
+- One outbound worker: claim, Telegram send, retryable-vs-terminal classification reusing the existing error-category vocabulary, bounded backoff.
+- Both workers run as controlled async loops inside the existing single Railway web process — no dedicated worker process, no new infrastructure.
+- Opportunistic, bounded retention cleanup for both new tables, matching Phase 25's existing dedup-table pattern.
+- Full crash-window test coverage (webhook-crash-before-ack, worker-crash-before-Assistant-call, worker-crash-after-Assistant-completes-before-job-success, and the documented outbound best-effort boundary) plus concurrency tests (two workers never double-claim the same row).
+
+**Scope — Explicitly not done**
+
+- Telegram-native interactive clarification/confirmation (PD-014's Scope B) — still deferred, not started by this phase.
+- Discord, WhatsApp, n8n, or any other channel.
+- Redis, Kafka, RabbitMQ, SQS, pg-boss, or any other queue dependency.
+- A dedicated worker process or deployment-topology change.
+- Exactly-once outbound Telegram delivery — not achievable without provider support Telegram's API doesn't offer; documented as an accepted at-least-once/best-effort boundary.
+- Any frontend change.
+
+**Risk**
+
+- **Low-to-moderate:** the operation-identity guard is the load-bearing new primitive protecting against duplicate Assistant execution (and therefore duplicate financial mutation) across a crash-and-retry; it was tested explicitly against the crash window where that guarantee could fail, and the one honestly-irreducible case (a crash between starting and recording the Assistant call) fails safe to a terminal, manually-inspectable state rather than guessing.
+
 ---
 
 ## Cross Repository Order
