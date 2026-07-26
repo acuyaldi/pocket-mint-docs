@@ -312,6 +312,8 @@ Private financial information remains inside the smallest practical trust bounda
 
 The system exposes health, correlation, job status, retry state, and failure signals without exposing private financial data. Availability problems must not be represented as empty financial history, and delayed Automation must use idempotent catch-up rather than silently skipping or duplicating work.
 
+For the Assistant boundary specifically, this principle is realized as a canonical structured-event taxonomy, a bounded error-category classification, and idempotency/recovery-outcome visibility, added in Phase 24 ([PD-013 — Assistant Production Observability Foundation](../product/decisions/013-assistant-observability-foundation.md)). Metrics are derived from those structured log fields rather than a separate metrics backend, since none is currently connected. See `pocket-mint-be/docs/observability-runbook.md` for the operational reference.
+
 ---
 
 # Future Architecture

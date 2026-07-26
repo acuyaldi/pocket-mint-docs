@@ -712,6 +712,43 @@ Expiry uses database time, not the application clock, and is represented as `STA
 
 This is Tasks 1–6 of the persistent clarification engine implementation plan (Tasks 1–5 merged via `dev`, Task 6 on `feature/clarification-http-endpoints`). Task 7 (documentation alignment, this note) is in progress. Task 8 (repeated full-suite verification, tracked `dist`/Prisma artifact regeneration, and final merge) has not started, so Phase 22.5 remains **in progress**, not implemented, until Task 8 passes and the branch merges.
 
+### Phase 24 — Assistant Production Observability Foundation
+
+**Purpose**
+
+Give the Assistant Core boundary a durable, structured way to answer production operational questions (success/failure per lifecycle stage, retries, idempotent replay, clarification/draft outcomes, recovery resolution, latency, and error class) without logging financial content, prompts, tokens, or internal reasoning. This is observability, not analytics or product-behavior tracking, and it introduces no new external channel.
+
+**Repositories**
+
+- `pocket-mint-docs` (this note, plus [ADR 013](../product/decisions/013-assistant-observability-foundation.md) and the referenced sections of [Assistant Core Architecture](../architecture/assistant-core-architecture.md) and [System Architecture](../architecture/system-architecture.md)).
+- `pocket-mint-be` — the only repository with code changes. See PR [`feature/assistant-observability-foundation`](https://github.com/acuyaldi/pocket-mint-backend/pull/80) against `dev`.
+- `pocket-mint-fe` — **not changed.** Discovery found no existing request-ID plumbing, error boundary, or error-reporting library to extend; building one from scratch was judged out of scope for a logging-extension phase.
+
+**Dependencies**
+
+- Phase 21 (Assistant Core) and Phase 22 (Deterministic Entity Resolution/Clarification Engine) — this phase instruments their existing lifecycle, it does not change it.
+- Numbered independently of Phase 23 (Assistant Resilience & Recovery), which had not yet been added to this roadmap as of this phase's authoring; no numbering collision was found.
+
+**Scope — Implemented**
+
+- A typed `logEvent`/`AssistantLogEvent` helper (extends the existing `src/utils/logger.ts`) whose field set is a closed allowlist — sensitive content cannot be passed through it by construction — plus the existing `redact()` blocklist as a runtime backstop.
+- A bounded `ErrorCategory` taxonomy and `categorizeError()` mapping (`src/utils/errorCategory.ts`), derived from error type/code only, never from raw exception messages.
+- Canonical events (`assistant.message.*`, `assistant.provider.*`, `assistant.tool.*`, `assistant.draft.*`, `assistant.clarification.*`, `assistant.recovery.*`) emitted at the existing HTTP controller/provider/executor boundaries, correlated by the pre-existing per-request `X-Correlation-Id`.
+- Idempotency-outcome visibility (`new` / `replay` / `conflict` / `expired`) on draft confirmation, without logging the idempotency key.
+- An operational runbook (`pocket-mint-be/docs/observability-runbook.md`) and a new "§13 Observability" section in `assistant-core.skill.md`.
+
+**Scope — Explicitly not done**
+
+- No new logging platform, metrics vendor, or dependency (no `prom-client`, OpenTelemetry, Sentry). No metrics backend was already connected, so counters/histograms are derived from the structured log fields rather than a new `/metrics` endpoint.
+- No Prisma schema or migration change.
+- No frontend change (see Repositories above).
+- No conversation ID, turn ID, or user identifier added to any log — only the existing correlation ID. No new pseudonymous-identifier scheme was invented for this phase.
+- No health/readiness endpoint change (the existing `/health` was already minimal and did not call the LLM provider).
+
+**Risk**
+
+- **Low:** additive logging/classification only; no change to Assistant lifecycle behavior, authorization, or financial mutation paths. Verified by the unchanged existing test suite plus new/extended tests asserting no sensitive content enters any new or modified log call.
+
 ---
 
 ## Cross Repository Order
