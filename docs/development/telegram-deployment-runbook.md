@@ -54,6 +54,14 @@ As of Phase 26B ([PD-015](../product/decisions/015-durable-channel-processing.md
 
 Both loops are safe to run across multiple Railway replicas — claiming is database-authoritative (leases + `SKIP LOCKED`), not "exactly one process" dependent. Disabling `CHANNEL_WORKERS_ENABLED` stops both loops but leaves the webhook accepting and persisting updates normally; they simply queue as `PENDING` until workers are re-enabled.
 
+## 2b. Interactive callbacks (Phase 26A)
+
+As of Phase 26A ([PD-016](../product/decisions/016-telegram-interactive-workflows.md)), `setWebhook` also subscribes to `callback_query` updates (inline keyboard button presses) alongside `message`. No new deployable, no new environment variable, no new worker loop — callback jobs flow through the exact same inbound/outbound worker pair as text messages, distinguished only by `ChannelInboundJob.kind`.
+
+- The webhook still only durably persists the job and synchronously calls `answerCallbackQuery` with a neutral acknowledgment (never the authoritative result) before returning.
+- The inbound worker routes a `CALLBACK`-kind job to `interaction.service.ts` instead of the Assistant NL path — it never invokes `assistantProviderRuntime.sendMessage` for a callback.
+- Re-registering the webhook after upgrading to a build that includes this phase is required for existing environments — `allowed_updates` is set at registration time, so an environment whose webhook was registered before this phase will not receive `callback_query` updates until `scripts/telegram-set-webhook.mjs` is re-run.
+
 ## 3. Environment separation
 
 Follows the existing staging/production split (`dev` → Railway staging, `main` → Railway production, `master` retired):
@@ -93,6 +101,8 @@ All `channel.*` structured log events (see [Telegram Security § Observability](
 | Jobs never seem to process | `channel.worker.started` absent at boot | `CHANNEL_WORKERS_ENABLED=false`, or `TELEGRAM_ENABLED=false` (workers are only constructed when the channel is enabled). |
 | A job is stuck `PROCESSING`/`SENDING` for a long time | `channel.inbound.lease_recovered` / `channel.outbound.lease_recovered` absent | The owning worker crashed mid-job; it self-heals once `CHANNEL_LEASE_MS` elapses and another poll reclaims it — see §8 if it doesn't. |
 | A job repeatedly fails with `errorCategory: ambiguous_assistant_execution` | `channel.inbound.failed` | The rare crash window PD-015 documents: a prior attempt started the Assistant call but crashed before recording the result. This is terminal by design — see §8 for manual inspection; do not blindly retry it. |
+| A job repeatedly fails with `errorCategory: ambiguous_callback_execution` | `channel.inbound.failed` | The Phase 26A equivalent of the row above, for callback interactions: a prior attempt claimed the callback token and/or started the clarification/draft call but crashed before recording a terminal result. Terminal by design — inspect `ChannelCallbackToken.status` and the underlying `ClarificationRequest`/`AssistantFinancialDraft` state before deciding whether the action actually completed; do not blindly retry. |
+| Buttons don't appear under a Telegram reply after upgrading | (none — this is a registration issue, not a processing failure) | The webhook was registered before this phase shipped; re-run `scripts/telegram-set-webhook.mjs` so Telegram actually subscribes to `callback_query` updates (see §2b). |
 
 ## 7. Telegram API outage handling
 

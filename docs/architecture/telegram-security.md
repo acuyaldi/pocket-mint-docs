@@ -40,8 +40,20 @@ Companion to [PD-014 — Telegram Channel Foundation](../product/decisions/014-t
 
 ## Confirmation-boundary preservation
 
-- A Telegram reply is classified from the same response shape (`success` / `clarification_required` / `rejected` / `error` / `unsupported`) the web frontend receives from `assistantProviderRuntime.sendMessage`. A draft (`data.confirmationRequired === true`) or a clarification never has its content rendered into a Telegram message — the user always gets one fixed, bounded "continue on the web app" instruction.
-- No draft ID, clarification ID, option token, or any other identifying value is included in that instruction — nothing is deep-linked, so there is nothing for a compromised or forwarded Telegram message to leak beyond "you have something pending."
+- A Telegram reply is classified from the same response shape (`success` / `clarification_required` / `rejected` / `error` / `unsupported`) the web frontend receives from `assistantProviderRuntime.sendMessage`.
+- **As of PD-016 (Phase 26A)**, a `clarification_required` result with supported options, or a freshly created draft, is rendered as an inline keyboard of opaque callback tokens instead of unconditionally falling back to the fixed web-handoff message — see "Interactive callbacks" below. Every case Telegram still cannot safely handle (STEP_UP, free-form clarification) continues to receive the original fixed, bounded "continue on the web app" instruction, with no draft ID, clarification ID, option token, or other identifying value included in it.
+
+## Interactive callbacks (Phase 26A)
+
+Companion to [PD-016 — Telegram Interactive Clarification & Confirmation](../product/decisions/016-telegram-interactive-workflows.md), which owns the full decision rationale. Security-review-level detail only:
+
+- **`callback_data` is always an opaque, randomly generated handle** (`ChannelCallbackToken`, `cbk_` + 24 random bytes, base64url) — never a domain identifier, never an action name, never a value. Only its `sha256` digest is persisted (`@@unique([provider, tokenDigest])`), mirroring `ClarificationOption.tokenDigest` exactly.
+- **Ownership is re-derived from scratch on every callback**, never trusted from the Telegram payload: token digest lookup → token `PENDING` and unexpired → bound `ChannelConnection` is `ACTIVE` → `callback_query.from.id` matches that connection's `externalUserId` → the token's `conversationId` matches the connection's *current* `conversationId`. Only after all five checks pass is the token atomically claimed and the authoritative clarification/draft service invoked.
+- **A revoked connection cannot act** — step 3 above fails closed the instant `ChannelConnection.status !== 'ACTIVE'`, with no separate keyboard-invalidation step required; the previously delivered keyboard is inert server-side from that moment on.
+- **A stale keyboard cannot reactivate a terminal clarification or draft** — pressing an old button after the underlying resource has already reached a terminal state (via web or a different Telegram press) returns that actual terminal status; it never creates a new clarification/draft or flips a terminal row back to `PENDING`.
+- **The one-time token claim is the race gate between two independent button presses** on the same token; the underlying domain services' own guards (clarification's conditional claim, the draft's advisory lock + idempotency key) are a second, independent layer, not the only one.
+- **`answerCallbackQuery` is not the authoritative result** — it is a synchronous, neutral acknowledgment (`"Processing…"` or no text) that happens once, in the webhook, and never claims success before the durable worker actually resolves the button press.
+- Nothing about this feature weakens the digest-only, one-time-consumption, or database-time-bounded-expiry guarantees the Persistent Clarification Engine and Pending Financial Draft lifecycle already provide — Telegram calls the same authoritative services the web client does, through `AssistantProviderRuntime` passthroughs, never a parallel path.
 
 ## Observability — what is never logged
 
