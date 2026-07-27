@@ -484,11 +484,23 @@ Phase 25 ([PD-014](../product/decisions/014-telegram-channel-foundation.md)) imp
 
 **Identity resolution:** `Telegram externalUserId → ChannelConnection → userId`, never the reverse and never from message content. `ChannelConnection` carries the "current" conversation id for that chat (set after the first message creates one, cleared by `/new`), so the Assistant's `conversationId` scoping (§14) applies identically regardless of transport.
 
-**Confirmation/clarification boundary preserved:** a Telegram reply is classified from the same `AssistantApplicationResult`/`AssistantProviderRuntimeResult` shape the web client receives. A `clarification_required` status or a `confirmationRequired: true` draft never reaches Telegram as data — the user gets one fixed instruction to continue on the web app. No draft payload, clarification option, or token is ever rendered into a Telegram message.
+**Confirmation/clarification boundary preserved:** a Telegram reply is classified from the same `AssistantApplicationResult`/`AssistantProviderRuntimeResult` shape the web client receives. At the time of Phase 25, a `clarification_required` status or a `confirmationRequired: true` draft never reached Telegram as data at all — the user got one fixed instruction to continue on the web app, no draft payload, clarification option, or token ever rendered into a Telegram message. Phase 26A (§15.6) adds a second, still-safe rendering for the subset of these that Telegram can now act on directly; the fixed web-handoff instruction remains the fallback for everything else.
 
-**Update authenticity and replay:** Telegram's shared secret header gates the webhook route before any parsing; `ChannelUpdateDedup`'s unique constraint on `(provider, externalUpdateId)` makes a retried delivery a database-enforced no-op rather than a best-effort guard.
+**Update authenticity and replay:** Telegram's shared secret header gates the webhook route before any parsing; `ChannelUpdateDedup`'s unique constraint on `(provider, externalUpdateId)` makes a retried delivery a database-enforced no-op rather than a best-effort guard. (`ChannelUpdateDedup` was later evolved in place into `ChannelInboundJob` by Phase 26B, §15.5 — the same unique constraint, carrying more state.)
 
 See PD-014 for the full decision record, the Telegram Security doc for the threat-model-level detail, and the Telegram Deployment Runbook for operational procedures.
+
+## 15.5. Durable Channel Processing (Phase 26B)
+
+Phase 26B ([PD-015](../product/decisions/015-durable-channel-processing.md)) makes Telegram processing durable and asynchronous: the webhook now only verifies, parses, resolves identity, and persists a `ChannelInboundJob` before acknowledging — the Assistant call and Telegram delivery happen afterward, in two claim-lease-process worker loops running inside the same process. `ChannelAssistantOperation` binds one inbound job to at most one Assistant turn (insert-first-wins, keyed `channel:<provider>:<jobId>`), so a reclaimed job after a crash replays its recorded result rather than re-invoking the Assistant. See PD-015 for the full decision, delivery guarantees, and crash-window analysis.
+
+## 15.6. Telegram Interactive Clarification & Confirmation (Phase 26A)
+
+Phase 26A ([PD-016](../product/decisions/016-telegram-interactive-workflows.md)) extends the Channel Adapter to accept Telegram `callback_query` updates (inline keyboard button presses) for a bounded set of actions: selecting or cancelling a clarification option, and confirming or cancelling a pending financial draft. It adds no new tool, no new policy tier, and no new financial-mutation path — every callback resolves through the same `application.service.ts`/`financial-draft.service.ts` methods the web client and Phase 25's text path already call, via four new passthroughs on `AssistantProviderRuntime` (`selectClarification`, `cancelClarification`, `confirmDraft`, `cancelDraft`).
+
+**Callback identity is never trusted from the Telegram payload.** A new provider-neutral `ChannelCallbackToken` (digest-only, mirrors `ClarificationOption.tokenDigest`) is the only thing Telegram's `callback_data` ever carries; `src/channels/interaction.service.ts` re-derives ownership — connection active, sender identity matches, conversation still current — before atomically claiming the token and invoking the authoritative service. `ChannelAssistantOperation` (§15.5) gained a `kind: ASSISTANT_TURN | CALLBACK_INTERACTION` discriminator so the same one-job-one-result guarantee covers callback interactions too, without a second parallel operation table.
+
+STEP_UP-tiered confirmation and free-form (arbitrary-text) clarification responses remain explicitly web-only — Telegram renders the pre-existing fixed web-handoff message for both, unchanged from Phase 25's behavior for everything that isn't a bounded button press. See PD-016 for the full decision record and the Telegram Security doc's "Interactive callbacks" section for the threat-model-level detail.
 
 ## 16. Domain-Event Integration
 

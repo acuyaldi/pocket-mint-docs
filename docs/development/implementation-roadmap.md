@@ -839,6 +839,47 @@ Replace Phase 25's synchronous Telegram webhook processing with a Postgres-backe
 
 ---
 
+### Phase 26A — Telegram Interactive Clarification & Confirmation
+
+**Purpose**
+
+Close PD-014's "Scope B" for the bounded set of actions the existing domain services already support end-to-end: selecting or cancelling a clarification option, and confirming or cancelling a pending financial draft, directly inside Telegram via inline keyboards — without introducing any parallel financial logic, natural-language interpretation of button presses, or weakened confirmation policy.
+
+**Repositories**
+
+- `pocket-mint-docs` (this note, plus [PD-016 — Telegram Interactive Clarification & Confirmation](../product/decisions/016-telegram-interactive-workflows.md), the updated [Assistant Core Architecture § 15.6](../architecture/assistant-core-architecture.md), [Telegram Security](../architecture/telegram-security.md#interactive-callbacks-phase-26a), and [Telegram Deployment Runbook § 2b](./telegram-deployment-runbook.md)).
+- `pocket-mint-be` — schema (new `ChannelCallbackToken`; `ChannelInboundJob` gains `kind`/`callbackQueryId`/`callbackMessageId`; `ChannelOutboundDelivery` gains `kind`/`replyMarkup`/`targetMessageId`; `ChannelAssistantOperation` gains `kind`/`callbackTokenId`/`terminalStatus`), `src/channels/interaction.service.ts` (new orchestration boundary), `src/channels/callbackToken.service.ts`, `src/telegram/keyboardRenderer.ts`, extended `src/telegram/schema.ts`/`envelope.ts`/`client.ts`/`telegram.service.ts`, extended `src/assistant/provider-runtime.ts` (four passthroughs), extended workers.
+- `pocket-mint-fe` — untouched. No shared API contract or web-fallback URL changed.
+
+**Dependencies**
+
+- Phase 25 (External Channel Foundation) and Phase 26B (Durable Channel Processing) — this phase extends both durable models in place and reuses their claim/lease/retention machinery unchanged.
+- Persistent Clarification Engine ([PD-012](../product/decisions/012-persistent-clarification-engine.md)) and Pending Financial Draft lifecycle — reused as the sole authoritative services; not modified.
+- No new external dependency (no Redis, queue platform, or dedicated worker process).
+
+**Scope — Implemented**
+
+- Telegram `callback_query` ingestion, synchronous `answerCallbackQuery` acknowledgment, durable deduplication through the existing `ChannelInboundJob` mechanism.
+- Opaque `ChannelCallbackToken` (digest-only) as the sole content of Telegram `callback_data` — no domain identifier, action name, or value ever appears in it.
+- Clarification option selection and cancellation, and financial draft confirm/cancel, all invoked through new `AssistantProviderRuntime` passthroughs — the same application-service methods the web HTTP path already calls.
+- Full server-side ownership re-derivation on every callback (connection active, Telegram identity matches, conversation still current) before any authoritative action runs.
+- Inline keyboard rendering for a fresh clarification/draft (message path) and for a clarification chained from a callback selection; keyboard cleanup (or inert markup) after a terminal result.
+- Crash-window, concurrency, and cross-user/ownership test coverage against a disposable PostgreSQL instance, plus an extended architectural contract test proving the callback path never imports transaction/wallet/category/merchant services directly.
+
+**Scope — Explicitly not done**
+
+- Step-up authentication inside Telegram — remains web-only until a `STEP_UP`-tiered tool exists.
+- Free-form/arbitrary-text clarification responses in Telegram — remains web-only.
+- Telegram Web Apps, media, voice, OCR, Discord, WhatsApp, n8n.
+- Any frontend change.
+- Exactly-once Telegram UI delivery — not achievable without provider support Telegram's API doesn't offer; same accepted at-least-once/best-effort boundary as Phase 26B's outbound delivery.
+
+**Risk**
+
+- **Low-to-moderate:** the callback-token claim is a second, independent race gate layered on top of (not replacing) the Persistent Clarification Engine's and Pending Financial Draft's own concurrency guarantees; tested explicitly for duplicate-button-press and confirm-vs-cancel races. No existing clarification/draft/idempotency behavior was changed — Telegram calls it through a thin passthrough, unmodified.
+
+---
+
 ## Cross Repository Order
 
 ```text
