@@ -712,6 +712,40 @@ Expiry uses database time, not the application clock, and is represented as `STA
 
 This is Tasks 1–6 of the persistent clarification engine implementation plan (Tasks 1–5 merged via `dev`, Task 6 on `feature/clarification-http-endpoints`). Task 7 (documentation alignment, this note) is in progress. Task 8 (repeated full-suite verification, tracked `dist`/Prisma artifact regeneration, and final merge) has not started, so Phase 22.5 remains **in progress**, not implemented, until Task 8 passes and the branch merges.
 
+### Phase 23 — Assistant Resilience & Recovery
+
+**Purpose**
+
+Audit the Assistant lifecycle end to end for client-visible resilience gaps — ambiguous retry outcomes, expired/consumed clarification tokens, duplicate confirm/cancel, auth expiry mid-mutation, and a browser refresh losing track of in-flight state — and close whichever of those gaps the existing contracts did not already resolve. This was scoped and delivered as an audit-driven phase, not a predetermined feature list, which is why it produced one narrow backend addition (23.5) rather than a broad body of new work.
+
+**Repositories**
+
+- `pocket-mint-docs` (this note, backfilled retroactively — see the note below — plus [Assistant Core Architecture § 15.3](../architecture/assistant-core-architecture.md#153-conversation-recovery-projection)).
+- `pocket-mint-be` — one new read-only route, `GET /assistant/conversations/:conversationId/recovery-state`, projecting existing `ClarificationRequest`/`AssistantFinancialDraft` state (`getAssistantState`, previously computed internally but never routed to HTTP).
+- `pocket-mint-fe` — consumes the new route to recover pending-clarification/pending-draft state after a refresh; no new page or navigation.
+
+**Dependencies**
+
+- Phase 22.5 (Persistent Clarification Engine, [PD-012](../product/decisions/012-persistent-clarification-engine.md)) and Phase 21.4 (First Financial Draft Flow) — this phase adds no new clarification or draft business logic; it only exposes their existing state over a new read projection.
+- Numbered independently of Phase 24 (Assistant Production Observability Foundation) and Phase 25 (External Channel Foundation) — no numbering collision was found against either; both were authored before this section existed and referred to Phase 23 as "documented only in the architecture doc."
+
+**Scope — Implemented**
+
+- `GET /assistant/conversations/:conversationId/recovery-state` (Phase 23.5) — see § 15.3 of the architecture doc for the full response shape and security boundary. Same ownership check and not-found semantics as the existing conversation-detail route; no new table, write path, or authority.
+
+**Scope — Explicitly not done**
+
+- Phases 23.1–23.4 were never separately scoped or built — the audit found every other candidate resilience gap already resolvable from the existing conversation-history and idempotency contracts, so no corresponding backend change exists for them. There is accordingly no PD document for Phase 23: the single shipped change was additive and small enough that the architecture doc update (§ 15.3) was judged sufficient, unlike Phases 25/26B/26A which each introduced a new subsystem warranting its own decision record.
+- Request-level idempotency for `POST /assistant/messages` and `POST /assistant/execute` — recovery-state (23.5) lets a client *discover* that something is pending, but does not itself prevent a retry from creating a second turn/draft. That gap is closed by Phase 27.
+
+**Risk**
+
+- **Low:** a pure read projection over already-persisted, already-authoritative state; no existing route, status code, or response shape changed.
+
+**Note on this section:** Phase 23 shipped before this roadmap tracked it — Phases 24 and 25 were both authored while Phase 23 was still undocumented here and each says so in their own Dependencies section. This section was added retroactively (2026-09-13) to close that gap; nothing above describes new work.
+
+---
+
 ### Phase 24 — Assistant Production Observability Foundation
 
 **Purpose**
@@ -727,7 +761,7 @@ Give the Assistant Core boundary a durable, structured way to answer production 
 **Dependencies**
 
 - Phase 21 (Assistant Core) and Phase 22 (Deterministic Entity Resolution/Clarification Engine) — this phase instruments their existing lifecycle, it does not change it.
-- Numbered independently of Phase 23 (Assistant Resilience & Recovery), which had not yet been added to this roadmap as of this phase's authoring; no numbering collision was found.
+- Numbered independently of Phase 23 (Assistant Resilience & Recovery — see its section above, backfilled 2026-09-13; it had not yet been added to this roadmap as of this phase's authoring); no numbering collision was found.
 
 **Scope — Implemented**
 
@@ -767,7 +801,7 @@ Establish a secure, auditable, channel-agnostic boundary for reaching the Assist
 
 - Phase 21 (Assistant Core) — Telegram invokes `assistantProviderRuntime.sendMessage`/`assistantApplicationService.execute` directly; it does not change their contracts.
 - Phase 22.5 (Persistent Clarification Engine, [PD-012](../product/decisions/012-persistent-clarification-engine.md)) and Phase 24 (Assistant Production Observability Foundation) — Telegram reuses their confirmation/clarification boundary and structured-logging conventions unchanged.
-- Numbered independently of Phase 23 (Assistant Resilience & Recovery, documented only in the architecture doc as of this writing) and Phase 24 (Assistant Production Observability Foundation) — no numbering collision was found against either.
+- Numbered independently of Phase 23 (Assistant Resilience & Recovery — see its section above, backfilled 2026-09-13) and Phase 24 (Assistant Production Observability Foundation) — no numbering collision was found against either.
 
 **Scope — Implemented**
 
@@ -877,6 +911,46 @@ Close PD-014's "Scope B" for the bounded set of actions the existing domain serv
 **Risk**
 
 - **Low-to-moderate:** the callback-token claim is a second, independent race gate layered on top of (not replacing) the Persistent Clarification Engine's and Pending Financial Draft's own concurrency guarantees; tested explicitly for duplicate-button-press and confirm-vs-cancel races. No existing clarification/draft/idempotency behavior was changed — Telegram calls it through a thin passthrough, unmodified.
+
+---
+
+### Phase 27 — Assistant Request-Level Idempotency & Turn Recovery
+
+**Purpose**
+
+Close the highest-priority reliability gap the post-Phase-26B Assistant/Telegram/conversation-history audit found: `POST /assistant/messages` and `POST /assistant/execute` had no request-level idempotency contract of their own. Telegram was already protected by `assistantOperationGuard` (§15.5, PD-015) at the channel layer, but a Web client retry, double submit, dropped connection, or resubmit could still create two turns — and, for `transaction.create`, two pending drafts — from what the user experienced as one action.
+
+**Repositories**
+
+- `pocket-mint-docs` (this note, plus [PD-017 — Assistant Request-Level Idempotency & Turn Recovery](../product/decisions/017-assistant-request-level-idempotency.md) and the new [Assistant Core Architecture § 15.7](../architecture/assistant-core-architecture.md#157-assistant-request-level-idempotency--turn-recovery-phase-27)).
+- `pocket-mint-be` — schema (`AssistantIdempotencyRecord` gains a `RUNNING | COMPLETED` status, nullable `turnId`, and a stored `responseStatus`/`responseBody` snapshot; `draftId` becomes nullable so one table serves both draft-confirm and turn-level idempotency), `conversation.service.ts` (`claimIdempotencyKey`/`resolveIdempotencyKey`), `application.service.ts` and `provider-runtime.ts` (optional `idempotencyKey` parameter wrapping `execute`/`sendMessage`), `assistant.controller.ts` (reads the `Idempotency-Key` header, logs the outcome), `clarification.service.ts`/`clarification.types.ts` (`activeTurn` added to the recovery-state projection), `docs/api/assistant-conversations.md`.
+- `pocket-mint-fe` — a stable per-submission `Idempotency-Key`, cached and reused for retries of the same message until a terminal outcome; recovery-state's `activeTurn`/RUNNING disables duplicate submission and shows a still-processing state; unrelated fix to `AssistantConversationHistory.tsx` (archiving the active conversation now force-resets, matching the delete path) bundled into the same phase per the audit that surfaced it.
+
+**Dependencies**
+
+- Phase 21.4 (First Financial Draft Flow) — reuses `AssistantIdempotencyRecord` and `validateIdempotencyKey`, extended rather than duplicated.
+- Phase 23.5 (Conversation Recovery Projection, § 15.3) — `activeTurn` is an additive field on the same `AssistantStateProjection`/recovery-state route, not a new endpoint.
+- Phase 26B (Durable Channel Processing, PD-015) — `assistantOperationGuard`'s insert-first-wins pattern is the concurrency-guard precedent this phase's `claimIdempotencyKey` follows, in preference to draft-confirm's whole-request advisory lock (see PD-017 for why).
+- Numbered independently of every other open phase; no collision was found.
+
+**Scope — Implemented**
+
+- Optional `Idempotency-Key` request header on `POST /assistant/messages` and `POST /assistant/execute`, same 1–128 ASCII `[A-Za-z0-9_.:-]` format as draft confirm. Omitted header reproduces exact pre-Phase-27 behavior (no dedup).
+- Insert-first-wins claim (not a lock held across the request) on `(userId, key)`, scoped independently per operation; a concurrent or retried request while the first is still in flight returns `409 ASSISTANT_REQUEST_IN_PROGRESS`; a request after completion replays the original response verbatim; cross-operation key reuse returns `409 ASSISTANT_IDEMPOTENCY_CONFLICT`; a malformed key returns `400 ASSISTANT_INVALID_IDEMPOTENCY_KEY` before any row is created.
+- `activeTurn` added to the `GET .../recovery-state` projection — the conversation's `RUNNING` turn (if any), independent of whether the original request used an `Idempotency-Key`.
+- Idempotency-outcome (`new`/`replay`) observability on both endpoints, following the existing `logEvent`/`idempotencyOutcome` convention from draft confirm — never logging the key itself.
+- Integration tests proving concurrent identical-key `/messages` and `/execute` requests create exactly one turn/draft each, plus a same-key-then-different-key sequence.
+
+**Scope — Explicitly not done**
+
+- Migrating Web `/messages`/`/execute` to the async channel inbox/outbox pipeline (§15.5) — they remain synchronous; this phase adds request-level dedup to the synchronous path, not a new architecture.
+- Dead-letter tooling, a recovery worker, or automatic expiry for a request stuck `RUNNING` after a crash — the same fail-closed gap `assistantOperationGuard`'s `ambiguous` outcome already accepts at the channel layer, now also accepted here.
+- Any channel badge or channel-identity UI in the frontend.
+- Cross-worker or cross-request ordering guarantees beyond the single-key dedup this phase provides.
+
+**Risk**
+
+- **Low-to-moderate:** the insert-first-wins claim is the load-bearing new primitive; it was chosen over draft-confirm's advisory lock specifically because `/messages` can hold an outbound provider call open for seconds, and holding a lock across that call was rejected as its own reliability risk (see PD-017). Reuses `AssistantIdempotencyRecord`'s existing unique constraint rather than introducing a second table.
 
 ---
 
