@@ -954,6 +954,46 @@ Close the highest-priority reliability gap the post-Phase-26B Assistant/Telegram
 
 ---
 
+### Phase 28 — Assistant Operations Visibility
+
+**Purpose**
+
+Close the operational-visibility gap the post-Phase-27 audit found: Phase 26B ([PD-015](../product/decisions/015-durable-channel-processing.md)) and Phase 27 ([PD-017](../product/decisions/017-assistant-request-level-idempotency.md)) both deliberately accept a narrow "ambiguous execution" / stuck-`RUNNING` failure mode rather than ever risk a duplicate financial mutation — correctly. But neither phase gave an operator a way to discover that state exists beyond already knowing the right SQL from the runbook or watching production logs at the moment it happens. This phase makes those states countable and inspectable on demand, without changing any financial mutation semantics.
+
+**Repositories**
+
+- `pocket-mint-docs` (this note, plus [PD-018 — Assistant Operations Visibility](../product/decisions/018-assistant-operations-visibility.md) and an expanded [Telegram Deployment Runbook §8](telegram-deployment-runbook.md#8-operator-procedures-phase-26b)).
+- `pocket-mint-be` — new pure module `src/domain/opsVisibility.ts` (safe row projections, error-category summarization), new read-only script `src/scripts/opsVisibility.ts` (counts + recent rows for ambiguous executions, terminal inbound/outbound failures, stale `RUNNING` turns), new unit tests for projection/redaction.
+- `pocket-mint-fe` — untouched; no admin/operator surface exists to extend, confirmed before deciding this (see PD-018).
+
+**Dependencies**
+
+- Phase 26B (Durable Channel Processing, PD-015) — reports on `ChannelInboundJob`/`ChannelOutboundDelivery`/`ChannelAssistantOperation` states this phase introduced, unchanged.
+- Phase 27 (Assistant Request-Level Idempotency & Turn Recovery, PD-017) — reports on the `AssistantTurn RUNNING`/stale-turn case this phase's crash window produces, using the same `@@index([status, startedAt])` its own `activeTurn` recovery-state projection already relies on.
+- Phase 24 (Assistant Production Observability Foundation, PD-013) — reuses its precedent that log-based/script-based visibility is the honest scope absent a connected metrics/alerting backend, rather than inventing one here.
+- Numbered independently of every other open phase; no collision was found.
+
+**Scope — Implemented**
+
+- `src/domain/opsVisibility.ts`: `toSafeInboundJobRow`/`toSafeOutboundDeliveryRow`/`toSafeAssistantTurnRow` (fixed-field projectors — the redaction control under test), `summarizeByErrorCategory`, `isAmbiguousExecution`, `STALE_RUNNING_TURN_MS`.
+- `src/scripts/opsVisibility.ts`: read-only (`findMany`/`count` only) report across four sections — ambiguous assistant/callback executions, terminal inbound job failures, terminal outbound delivery failures, stale `RUNNING` Assistant turns — each with a total count and up to 20 recent rows (matching the runbook's existing `LIMIT 20` convention) through the safe projector. `--json` flag; exit `0`/`2`/`1` matching `src/scripts/reconcile.ts`'s existing convention.
+- Telegram Deployment Runbook §8 gains the script's usage alongside the existing SQL (the SQL remains valid and unchanged — the script is a faster path to the same read-only information, not a replacement).
+- Unit tests proving each projector strips fields outside its fixed allowlist (message text, external provider identifiers, rendered content, reply markup) even when given a row shape that carries them.
+
+**Scope — Explicitly not done**
+
+- No admin HTTP endpoint or admin UI in either repository — none exists today, and building one solely to gate this report was rejected (see PD-018).
+- No automatic replay or remediation of any ambiguous or terminal row — this phase is discoverability only.
+- No new background scheduler/ticker — the script is operator- or CI-invoked, not self-scheduling; the existing channel-worker poll loops are not reused for this (see PD-018 for why).
+- No alerting/paging integration — no metrics or alerting backend is connected to page off of.
+- No change to `assistantOperationGuard`, idempotency-claim behavior, or transaction/draft confirmation semantics.
+
+**Risk**
+
+- **Low:** every new query is read-only (`findMany`/`count`), reuses existing indexes, and the script follows an already-proven pattern (`src/scripts/reconcile.ts`) rather than introducing a new one. The main risk is a safe-field-list omission or a threshold constant that needs tuning in practice — both are cheap to correct without touching any financial-mutation code path.
+
+---
+
 ## Cross Repository Order
 
 ```text
