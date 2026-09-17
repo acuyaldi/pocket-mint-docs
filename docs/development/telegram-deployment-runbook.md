@@ -108,15 +108,45 @@ All `channel.*` structured log events (see [Telegram Security § Observability](
 
 If `channel.outbound.failed` events show a sustained `provider_unavailable`/`provider_rate_limit` category, the Assistant already ran and its result is safely persisted (conversation history, any draft, and the rendered reply on the `ChannelOutboundDelivery` row) — only the Telegram send failed. The outbound worker retries automatically with backoff up to `CHANNEL_MAX_ATTEMPTS_OUTBOUND`; no re-execution of the Assistant occurs (delivery and Assistant execution are separate steps, by design — see PD-014 and PD-015). Once the outage clears, pending retries resolve on their own; no manual action is normally required.
 
-## 8. Operator procedures (Phase 26B)
+## 8. Operator procedures (Phase 26B / Phase 28)
 
-All procedures below are read-only inspections or bounded, targeted updates — never ad hoc payload injection, and never a direct HTTP admin endpoint (none exists; these are database-safe operator queries run against the application database).
+All procedures below are read-only inspections or bounded, targeted updates — never ad hoc payload injection, and never a direct HTTP admin endpoint (none exists; these are database-safe operator queries and scripts run against the application database).
+
+### 8.0 Diagnostic script (Phase 28, [PD-018](../product/decisions/018-assistant-operations-visibility.md))
+
+The fastest path to the same read-only information the SQL below provides — one command, no need to remember the exact queries:
+
+```bash
+npx ts-node src/scripts/opsVisibility.ts            # human-readable report
+npx ts-node src/scripts/opsVisibility.ts --json     # machine-readable
+# or, after build: node dist/scripts/opsVisibility.js [--json]
+```
+
+Reports four sections, each with a total count and up to 20 recent rows (safe fields only — never message text, external provider identifiers, rendered content, or reply markup):
+
+- **Ambiguous assistant/callback executions** — `ChannelInboundJob` rows with `errorCategory` in `ambiguous_assistant_execution` / `ambiguous_callback_execution`.
+- **Terminal inbound job failures** — all `ChannelInboundJob` rows at `FAILED_TERMINAL`, broken down by `errorCategory` (the ambiguous rows above are a subset of this).
+- **Terminal outbound delivery failures** — all `ChannelOutboundDelivery` rows at `FAILED_TERMINAL`, broken down by `errorCategory`.
+- **Stale `RUNNING` Assistant turns** — `AssistantTurn` rows still `RUNNING` past `STALE_RUNNING_TURN_MS` (5 minutes; see `src/domain/opsVisibility.ts`) — the Phase 27 crash-window case.
+
+Exit code `0` (clean), `2` (something found — worth a look), or `1` (usage/DB error) — the same convention as `src/scripts/reconcile.ts`, so it composes with CI or a manual health check the same way. **Read-only**: it issues no create/update/delete, exactly like `reconcile.ts`. It does not replace the manual cross-check below for deciding whether an ambiguous execution actually completed — it only tells you it exists and how many.
+
+### 8.1 Raw SQL (equivalent, for when a database client is already open)
 
 **Inspect aggregate job/delivery counts** (by status, to spot a growing backlog or a stuck lease):
 
 ```sql
 SELECT status, count(*) FROM channel_inbound_jobs GROUP BY status;
 SELECT status, count(*) FROM channel_outbound_deliveries GROUP BY status;
+```
+
+**Find stale `RUNNING` Assistant turns** (Phase 27's accepted crash-window case — a request that claimed an `Idempotency-Key` and crashed before resolving it; never flip these back or re-invoke the Assistant for them):
+
+```sql
+SELECT id, conversation_id, correlation_id, intent, started_at
+FROM assistant_turns
+WHERE status = 'RUNNING' AND started_at < now() - interval '5 minutes'
+ORDER BY started_at ASC LIMIT 20;
 ```
 
 **Find stuck leases** (claimed but not completed well past their lease window — usually self-heals on the next poll, but useful to confirm workers are actually running):
