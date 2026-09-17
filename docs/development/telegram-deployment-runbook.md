@@ -108,7 +108,7 @@ All `channel.*` structured log events (see [Telegram Security § Observability](
 
 If `channel.outbound.failed` events show a sustained `provider_unavailable`/`provider_rate_limit` category, the Assistant already ran and its result is safely persisted (conversation history, any draft, and the rendered reply on the `ChannelOutboundDelivery` row) — only the Telegram send failed. The outbound worker retries automatically with backoff up to `CHANNEL_MAX_ATTEMPTS_OUTBOUND`; no re-execution of the Assistant occurs (delivery and Assistant execution are separate steps, by design — see PD-014 and PD-015). Once the outage clears, pending retries resolve on their own; no manual action is normally required.
 
-## 8. Operator procedures (Phase 26B / Phase 28)
+## 8. Operator procedures (Phase 26B / Phase 28 / Phase 29)
 
 All procedures below are read-only inspections or bounded, targeted updates — never ad hoc payload injection, and never a direct HTTP admin endpoint (none exists; these are database-safe operator queries and scripts run against the application database).
 
@@ -176,6 +176,8 @@ SET status = 'PENDING', available_at = now(), attempt = 0, error_category = NULL
 WHERE id = '<delivery-id>' AND status = 'FAILED_TERMINAL';
 ```
 
+Prefer `src/scripts/opsRemediate.ts requeue-outbound` (§8.2) over hand-typing this — same effect, but it re-checks the row is still `FAILED_TERMINAL` right before writing instead of trusting a possibly-stale read.
+
 **Pause/resume workers:** set `CHANNEL_WORKERS_ENABLED=false` (or `true`) and redeploy. Pending jobs/deliveries are untouched and resume processing as soon as workers restart — nothing is lost while paused.
 
 **Clean up retention data manually** (normally unnecessary — both workers already run this opportunistically on every poll tick that processes at least one row):
@@ -185,3 +187,68 @@ WHERE id = '<delivery-id>' AND status = 'FAILED_TERMINAL';
 ```
 
 Prefer letting the worker's own inline cleanup run rather than deleting rows by hand; it already excludes anything active or leased.
+
+### 8.2 Bounded remediation actions (Phase 29, [PD-019](../product/decisions/019-safe-operator-remediation.md))
+
+`src/scripts/opsRemediate.ts` turns three of the procedures below into a repeatable command instead of hand-typed SQL. **Every subcommand takes exactly one explicit row id, defaults to a dry-run print of the change, and requires `--apply` to actually write** — there is no "fix all" mode.
+
+```bash
+npx ts-node src/scripts/opsRemediate.ts mark-reviewed --job <id> --operator <name> --note <text>   # dry-run
+npx ts-node src/scripts/opsRemediate.ts mark-reviewed --job <id> --operator <name> --note <text> --apply
+
+npx ts-node src/scripts/opsRemediate.ts requeue-outbound --delivery <id>            # dry-run
+npx ts-node src/scripts/opsRemediate.ts requeue-outbound --delivery <id> --apply
+
+npx ts-node src/scripts/opsRemediate.ts reconcile-turn --turn <id>                  # dry-run
+npx ts-node src/scripts/opsRemediate.ts reconcile-turn --turn <id> --apply
+# or, after build: node dist/scripts/opsRemediate.js <subcommand> ...
+```
+
+Run `opsVisibility.ts` first (§8.0) to find the id you need — this script never lists rows, it only acts on one you already identified.
+
+Below are the four triage flows this phase defines, in the same order `opsVisibility.ts` reports them. Each is explicitly marked **safe to retry** or **manual-inspection-only** — never assume a new state is safe just because it resembles one of these.
+
+#### Ambiguous assistant/callback execution — manual-inspection-only, never replayed
+
+`ChannelInboundJob` at `FAILED_TERMINAL` with `error_category` in `ambiguous_assistant_execution` / `ambiguous_callback_execution`.
+
+1. Look up the job's `assistant_turn_id` (from `opsVisibility.ts` or §8.1's SQL).
+2. Cross-check `assistant_turns` and `assistant_financial_drafts` for a matching turn/draft from around the same time, per the existing check this runbook already documented before Phase 29.
+3. Once you've determined the outcome (completed, or genuinely lost) and taken any necessary out-of-band action with the user, record that you reviewed it:
+   ```bash
+   npx ts-node src/scripts/opsRemediate.ts mark-reviewed --job <id> --operator <you> --note "checked assistant_turns/drafts, no duplicate risk, user re-sent manually" --apply
+   ```
+   This **only** sets `reviewed_at`/`reviewed_by`/`review_note` — it never changes `status`, so the job can never be reclaimed or reprocessed by this action, and the Assistant is never re-invoked. **There is no subcommand that requeues this job.** That is deliberate: the ambiguity is exactly whether the Assistant already ran, and re-running it risks a duplicate financial mutation — the one outcome this whole area of the system (PD-015/PD-016) exists to prevent.
+
+#### Terminal inbound job failure (non-ambiguous) — manual-inspection-only
+
+`ChannelInboundJob` at `FAILED_TERMINAL` with any other `error_category` (e.g. `validation`, `policy_rejected`, `tool_failure`). The Assistant call itself either never started or definitively failed — there is no ambiguity about whether it ran, but re-sending the *original inbound update* would still mean re-deriving a fresh Assistant turn from old input, which this system does not do automatically.
+
+1. Read `error_category` (§8.1) to understand why it failed.
+2. This is normally a user-facing failure the user can resolve by sending a new message (e.g. rephrasing); there is nothing for an operator to remediate on the row itself.
+3. If the failure indicates a bug (e.g. an unexpected `internal`/`database` category recurring across many jobs), that is a code-fix investigation, not something this script addresses.
+
+#### Terminal outbound delivery failure — safe to retry
+
+`ChannelOutboundDelivery` at `FAILED_TERMINAL`. The Assistant already ran and its result (conversation history, any draft, the rendered reply) is already durably persisted — only the Telegram send itself failed and exhausted its automatic retries.
+
+1. Confirm the category is a delivery-side problem (e.g. `provider_unavailable`, `network`), not evidence of a deeper issue.
+2. Requeue it:
+   ```bash
+   npx ts-node src/scripts/opsRemediate.ts requeue-outbound --delivery <id> --apply
+   ```
+   This only re-sends the already-rendered Telegram message (`status → PENDING`, `attempt → 0`, `available_at → now()`, `error_category → NULL`) — the same fields §8.1's SQL already documented. It never touches the originating `ChannelInboundJob`, never calls into Assistant Core, and never creates or modifies a `Transaction`. Safe to run more than once if it fails again; each retry is bounded by `CHANNEL_MAX_ATTEMPTS_OUTBOUND` on the next failure.
+
+#### Stale `RUNNING` Assistant turn — bounded reconciliation, not a fix
+
+`AssistantTurn` at `RUNNING` past `STALE_RUNNING_TURN_MS` (5 minutes) — the Phase 27 crash-window case: a process claimed an `Idempotency-Key` and crashed before resolving it.
+
+1. **Never** flip this back to `PENDING` or re-invoke the Assistant for it — the client's original request may or may not have completed.
+2. Cross-check `assistant_financial_drafts`/`transactions` for anything created under this turn before doing anything else — this script does not do that check for you.
+3. Once you've confirmed reconciling won't hide a real outcome, mark the turn terminal:
+   ```bash
+   npx ts-node src/scripts/opsRemediate.ts reconcile-turn --turn <id> --apply
+   ```
+   This sets `status → FAILED`, `safe_error_code → operator_reconciled_stale_turn`, and `finished_at → now()` — the same field subset a normal turn failure already writes. It never creates or touches an `AssistantFinancialDraft`, an `AssistantIdempotencyRecord`, or a `Transaction`. This stops the turn from reading as "in progress" forever; it does **not** tell you whether the user's original request succeeded — that determination still requires step 2, by design.
+
+**All three `--apply` writes use a conditional update that re-checks the same precondition right before writing** (the job is still `FAILED_TERMINAL` and ambiguous, the delivery is still `FAILED_TERMINAL`, the turn is still `RUNNING` and stale). If the row changed since you looked — another operator acted first, or a worker picked it up — the script reports that and exits non-zero instead of overwriting; re-run `opsVisibility.ts` and reassess.

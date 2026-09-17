@@ -994,6 +994,50 @@ Close the operational-visibility gap the post-Phase-27 audit found: Phase 26B ([
 
 ---
 
+### Phase 29 — Safe Operator Remediation
+
+**Purpose**
+
+Move from visibility to bounded, explicit operator remediation for the operational failure states Phase 28 ([PD-018](../product/decisions/018-assistant-operations-visibility.md)) made discoverable — without changing any financial mutation semantics and without ever automatically replaying an ambiguous Assistant execution. Phase 28 deliberately deferred a "reviewed" flag until a real triage workflow existed to consume it; this phase is that workflow.
+
+**Repositories**
+
+- `pocket-mint-docs` (this note, plus [PD-019 — Safe Operator Remediation](../product/decisions/019-safe-operator-remediation.md) and an expanded [Telegram Deployment Runbook §8](telegram-deployment-runbook.md#8-operator-procedures-phase-26b--phase-28--phase-29)).
+- `pocket-mint-be` — additive migration on `ChannelInboundJob` (`reviewedAt`/`reviewedBy`/`reviewNote`), new pure module `src/domain/opsRemediation.ts` (safety gates + fixed update-payload builders), new script `src/scripts/opsRemediate.ts` (`mark-reviewed`/`requeue-outbound`/`reconcile-turn` subcommands, dry-run by default), new unit and DB-integration tests.
+- `pocket-mint-fe` — untouched; no admin/operator surface exists to extend (re-confirmed, see PD-019).
+
+**Dependencies**
+
+- Phase 28 (Assistant Operations Visibility, PD-018) — this phase acts only on the states Phase 28 made discoverable, and reuses its safe-projection/redaction posture.
+- Phase 26B (Durable Channel Processing, PD-015) and Phase 26A (Telegram Interactive Workflows, PD-016) — the ambiguous-execution categories this phase records review of, and the outbound-delivery model this phase requeues, unchanged.
+- Phase 27 (Assistant Request-Level Idempotency & Turn Recovery, PD-017) — the stale-`RUNNING`-turn case this phase reconciles.
+- Numbered independently of every other open phase; no collision was found.
+
+**Scope — Implemented**
+
+- Migration: `ChannelInboundJob.reviewedAt`/`reviewedBy`/`reviewNote` (all nullable) — additive only, no existing code path reads or writes them.
+- `src/domain/opsRemediation.ts`: `canMarkReviewed`/`canRequeueOutbound`/`canReconcileStaleTurn` safety gates, `buildMarkReviewedUpdate`/`buildRequeueOutboundUpdate`/`buildReconcileTurnUpdate` fixed-field update-payload builders.
+- `src/scripts/opsRemediate.ts`: three subcommands, each requiring a single explicit row id, dry-run by default, `--apply` to write, a conditional `updateMany` guard against a raced/changed row.
+- Telegram Deployment Runbook §8 gains explicit triage flows for all four operational states (ambiguous execution, terminal inbound failure, terminal outbound failure, stale `RUNNING` turn), each marked safe-to-retry or manual-inspection-only.
+- Unit tests for the safety gates and, specifically, tests proving the ambiguous-execution update payload can never contain a field that would cause reprocessing, and the outbound-requeue payload can never reference Assistant/domain state.
+- DB-integration tests (gated on `TEST_DATABASE_URL`) proving each `--apply` write touches only its documented fields and nothing else — no draft, no transaction, no idempotency record.
+
+**Scope — Explicitly not done**
+
+- No automatic replay or re-execution of any ambiguous Assistant/callback execution.
+- No repeating or simulating a financial mutation of any kind.
+- No admin HTTP endpoint or admin UI — none exists today, none introduced here (see PD-019).
+- No bulk/"fix all" remediation mode — every subcommand requires one explicit identifier.
+- No new background scheduler/ticker — remediation stays operator-invoked.
+- No cross-worker ordering or queue redesign.
+- No change to `assistantOperationGuard`, idempotency-claim behavior, or transaction/draft confirmation semantics.
+
+**Risk**
+
+- **Low-to-Medium:** the migration is additive-only and every write path is gated behind an explicit id, a safety-gate predicate, and a conditional `updateMany`. The main risk is an operator misjudging when a stale turn is *actually* safe to reconcile (the script itself does not — and cannot — resolve whether the underlying financial request completed); the runbook's explicit manual cross-check remains mandatory and is called out at every relevant step.
+
+---
+
 ## Cross Repository Order
 
 ```text
