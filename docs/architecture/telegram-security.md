@@ -59,6 +59,17 @@ Companion to [PD-016 — Telegram Interactive Clarification & Confirmation](../p
 
 Every `channel.*` event (`webhook.received`, `webhook.rejected`, `update.duplicate`, `link.created`, `connection.revoked`, `assistant.started/completed/failed`, `delivery.started/completed/failed`) carries only: `event`, `requestId` (correlation id), `provider: "telegram"`, `durationMs`, `outcome`/`errorCategory`. None of the following are ever logged, by construction (there is no code path that reads them into a log call): Telegram message text, usernames, display names, chat titles, the bot token, the webhook secret, linking tokens (raw or digest), or raw webhook payloads.
 
+## Cross-channel attribution in client-facing DTOs (Phase 30)
+
+Companion to [PD-020 — Channel Source Attribution & Cross-Channel UX](../product/decisions/020-channel-source-attribution.md). Phase 30 exposes, for the first time, which channel produced a turn/conversation — `AssistantTurn.channel` and the derived `conversation.sourceChannels`, returned by the existing `GET /assistant/conversations` and `GET /assistant/conversations/:id` responses. The only values either field can ever hold are the closed `AssistantChannel` enum labels, `WEB` and `TELEGRAM` — never a provider identifier of any kind. By construction, none of the following ever cross this (or any other Assistant) API boundary:
+
+- Telegram chat id (`externalChatId`)
+- Telegram user id (`externalUserId` / `externalSenderId`)
+- Any callback token, digest, or `callback_data` value
+- Any raw Telegram webhook/update payload or field from it
+
+The channel label is derived and stamped entirely server-side — `src/channels/workers/inbound.worker.ts` writes `AssistantTurn.channel` directly from its own trusted job/connection context, never from client-supplied or Telegram-message-content input, and the read path (`conversation.service.ts`) only ever projects that one enum column outward. A frontend client that receives a future, unrecognized channel value (or no field at all, from an older backend) is expected to treat it as unknown — never to assume `WEB` or attempt to interpret it further.
+
 ## Deployment separation
 
 - `TELEGRAM_ENABLED` defaults to unset/false; the webhook route, the linking API's practical usefulness, and the Telegram client are all inert until it is explicitly turned on per environment (see the [deployment runbook](../development/telegram-deployment-runbook.md)).
