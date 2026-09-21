@@ -1169,6 +1169,45 @@ Phase 31 safely omitted `deliveryStatus` for a TELEGRAM turn whose delivery row 
 
 ---
 
+### Phase 33 — Conversation History Retention & Deletion Semantics
+
+**Purpose**
+
+By Phase 32 the Assistant conversation lifecycle already spans archive, restore, delete, `title`, channel source attribution, and delivery status. Inspection at the start of this phase found `archiveOwnedConversation`/`restoreOwnedConversation`/`deleteOwnedConversation` already implemented, routed, and minimally tested — including a code comment on delete that had already independently corrected the exact false `Transaction.conversationId` claim this phase was commissioned to guard against. This phase closes the remaining gap: the interaction between delete/archive and a pending draft, a pending clarification, a channel-linked conversation, and the two channel operational tables had never been tested or documented, and two true-but-unstated facts (an unreachable `EXPIRED` status value; two un-FK'd channel columns that go stale on delete) had never been written down. No implementation was changed — only verified, tested, and documented.
+
+**Repositories**
+
+- `pocket-mint-docs` (this note, plus [PD-023 — Conversation History Retention & Deletion Semantics](../product/decisions/023-conversation-history-retention-deletion-semantics.md) and [Assistant Core Architecture §15.11](../architecture/assistant-core-architecture.md#1511-conversation-history-retention--deletion-semantics-phase-33)).
+- `pocket-mint-be` — no schema, migration, or `src/` change; `docs/api/assistant-conversations.md`'s "Archive, restore, and delete" section expanded with the pending-draft/clarification, channel-linked, channel-operational-row, `EXPIRED`-unreachable, and concurrent-RUNNING-delete semantics; seven new/extended integration tests in `test/assistant/conversation-service.integration.test.ts` pinning all of the above against a real cascade.
+- `pocket-mint-fe` — inspected `assistant.history.*` copy (`messages/en.json`/`messages/id.json`) and the archive/delete confirmation dialogs against the verified semantics; found already accurate. No change.
+
+**Dependencies**
+
+- Phase 27 (Assistant Request-Level Idempotency & Turn Recovery, PD-017) — this phase's accepted concurrent-RUNNING-delete gap follows the same no-lock-across-in-flight-work precedent Phase 27 established.
+- Phase 30 (Channel Source Attribution, PD-020) — `sourceChannels`/`channel`, confirmed unaffected by archive/restore.
+- Phase 31/32 (Channel Delivery Receipts / Retention, PD-021/PD-022) — `deliveryStatus`, confirmed preserved unchanged by archive.
+- Numbered independently of every other open phase; no collision was found.
+
+**Scope — Implemented**
+
+- `docs/api/assistant-conversations.md`: expanded "Archive, restore, and delete" section — pending draft/clarification cascade on delete, `ChannelConnection` SetNull (already documented, reworded for clarity), `ChannelInboundJob.assistantTurnId`/`ChannelAssistantOperation.turnId` have no relation and go stale on delete (new), `AssistantConversationStatus.EXPIRED` is reserved but unreachable (new), archive does not block an in-flight `RUNNING` turn's `finalize` (new), concurrent delete of a `RUNNING` turn is an accepted unguarded gap (new).
+- `test/assistant/conversation-service.integration.test.ts`: `archive preserves messages, tool history, and channel/delivery metadata`; `does not block finalizing an in-flight RUNNING turn after its conversation is archived mid-request`; `restores idempotently, preserves title/sourceChannels, and allows continuation again` (extended existing test); `makes archiving and restoring an unknown or cross-user conversation indistinguishable from not-found`; `deletes a conversation with a pending financial draft and a pending clarification without error`; `SetNulls ChannelConnection.conversationId instead of blocking delete`; `leaves unenforced ChannelInboundJob.assistantTurnId and ChannelAssistantOperation.turnId pointing at a deleted turn`; `never deletes the referenced Transaction when cascading away a conversation's draft/idempotency rows`.
+
+**Scope — Explicitly not done**
+
+- No retention policy redesign — no new automatic expiry, archival, or deletion job for conversations, drafts, or channel operational rows.
+- No admin/operator UI or endpoint, no queue redesign, no automatic remediation, no new provider.
+- No broad Assistant frontend redesign — copy inspected and found already correct, not rewritten.
+- No deletion or rewriting of financial transaction history — this phase's own new tests exist specifically to prove that path stays closed.
+- No schema or migration change — `EXPIRED` stays declared-but-unused; the two un-FK'd channel columns are documented, not given a new relation.
+- No lock or guard added for a delete racing an in-flight `RUNNING` turn — named as an accepted limitation, matching Phase 27's own precedent.
+
+**Risk**
+
+- **Low:** no schema, no migration, no write-path or read-path behavior change of any kind — this phase is documentation and test coverage over already-correct, already-shipped behavior (`feature/phase-32-channel-delivery-retention-backend`, the current tip of the Assistant phase stack). The only risk this phase manages is documentation drift, which is exactly what it closes.
+
+---
+
 ## Cross Repository Order
 
 ```text
