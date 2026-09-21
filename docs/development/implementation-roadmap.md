@@ -1038,6 +1038,53 @@ Move from visibility to bounded, explicit operator remediation for the operation
 
 ---
 
+### Phase 30 — Channel Source Attribution & Cross-Channel UX
+
+**Purpose**
+
+Now that reliability (Phase 27) and operator safety (Phases 28–29) are addressed, close the one remaining transparency gap the post-Phase-29 audit found: an Assistant conversation can be shared across Web and Telegram (Phase 25, [PD-014](../product/decisions/014-telegram-channel-foundation.md)), but the conversation/turn DTOs and Web UI expose no channel/source concept — a user can see a turn in the Web Assistant that actually originated from Telegram, with no visible attribution. This phase makes that already-existing cross-channel state transparent, without changing any channel behavior, financial mutation semantics, or clarification/draft logic.
+
+**Repositories**
+
+- `pocket-mint-docs` (this note, plus [PD-020 — Channel Source Attribution & Cross-Channel UX](../product/decisions/020-channel-source-attribution.md) and [Assistant Core Architecture §15.8](../architecture/assistant-core-architecture.md#158-channel-source-attribution-phase-30)).
+- `pocket-mint-be` — additive migration (`AssistantChannel` enum, `AssistantTurn.channel` column, best-effort backfill), a post-hoc channel stamp in `src/channels/workers/inbound.worker.ts` (both the MESSAGE and CALLBACK paths), one additive `turnId` field on `renderApplicationResult`'s `CallbackActionResult`, `sourceChannels`/`channel` projections in `conversation.service.ts`'s existing read paths, new unit and DB-integration tests.
+- `pocket-mint-fe` — additive `sourceChannels`/`channel` fields on the Assistant types, a subtle Telegram badge in the conversation history list and next to a Telegram-originated message in the timeline, new/updated Storybook stories.
+
+**Dependencies**
+
+- Phase 25 (Telegram Channel Foundation, PD-014) — the cross-channel conversation sharing this phase makes visible; no channel behavior changes.
+- Phase 26A (Telegram Interactive Workflows, PD-016) — `renderApplicationResult` and the callback path this phase adds a `turnId` field to and stamps from.
+- Phase 26B (Durable Channel Processing, PD-015) — the `ChannelInboundJob` retention policy (`src/channels/retention.ts`) that ruled out a pure read-time derivation in favor of a persisted, stamped column (see PD-020).
+- Phase 28/29 (Assistant Operations Visibility & Safe Operator Remediation, PD-018/PD-019) — untouched by this phase; no ops-tooling surface is affected.
+- Numbered independently of every other open phase; no collision was found.
+
+**Scope — Implemented**
+
+- Migration: `AssistantChannel` enum (`WEB`, `TELEGRAM`), `AssistantTurn.channel` column (`@default(WEB)`, additive), plus a one-time best-effort backfill from still-live `ChannelInboundJob` rows.
+- `src/channels/workers/inbound.worker.ts`: a best-effort, non-blocking `stampTelegramChannel` call after both the MESSAGE and CALLBACK paths resolve a turn id — `application.service.ts`, `provider-runtime.ts`, and `financial-draft.service.ts` are not modified.
+- `src/channels/interaction.types.ts` / `interaction.service.ts`: `CallbackActionResult` gains an optional `turnId`, populated in every `renderApplicationResult` branch.
+- `src/assistant/conversation.service.ts`: `getOwnedConversation` returns `channel` per turn and a derived `conversation.sourceChannels`; `listOwnedConversations` returns `sourceChannels` per summary row via one additional `assistantTurn.groupBy` query.
+- Frontend: `AssistantChannel` type, optional `sourceChannels`/`channel` fields on `AssistantConversationSummary`/`AssistantTurn`, a subtle icon badge in `AssistantConversationHistoryList` and next to a Telegram-originated message's role label in `AssistantMessage`/`AssistantMessageList`/`AssistantConversation`. Nothing renders for the default `WEB` case.
+- Backend HTTP-boundary and DB-integration tests proving the new fields pass through correctly and never leak `externalChatId`/`externalSenderId`/`externalUserId`/callback tokens; worker unit tests proving the stamp fires for both paths, never fires for a callback outcome that never reached the application service, and never blocks reply delivery or job success on failure.
+- Frontend unit tests (i18n key parity) and Storybook stories/a11y coverage for the new badge states.
+
+**Scope — Explicitly not done**
+
+- No Telegram `externalChatId`/`externalUserId`/`externalSenderId` exposure, no callback token exposure, no raw provider payload exposure, through any DTO.
+- No new channel provider implementation — `AssistantChannel` covers exactly the two values the system already has.
+- No durable queue redesign.
+- No admin/operator UI or endpoint.
+- No automatic cross-channel conflict resolution.
+- No broad Assistant UI redesign — the only frontend surface is a subtle badge in already-existing components.
+- No live "currently shared with Telegram" indicator (`sharedWithTelegram`) — see PD-020 Follow-up.
+- No recovery of attribution for turns whose `ChannelInboundJob` has already been retention-purged, or for pre-Phase-30 callback-originated turns — a documented, one-time, bounded gap in historical data only (see PD-020).
+
+**Risk**
+
+- **Low:** the schema change is additive with a safe default, the write-path change is a best-effort, non-blocking, isolated addition to one worker file (never touching the Web/Telegram-shared application/provider-runtime/financial-draft code), and the read-path change reuses `conversation.service.ts`'s existing query patterns. The main risk is the accepted, documented historical-data gap for already-purged `ChannelInboundJob` rows and pre-Phase-30 callback turns, which is a data-quality limitation, not a correctness or security risk.
+
+---
+
 ## Cross Repository Order
 
 ```text
