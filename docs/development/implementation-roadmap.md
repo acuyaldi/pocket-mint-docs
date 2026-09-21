@@ -1085,6 +1085,48 @@ Now that reliability (Phase 27) and operator safety (Phases 28–29) are address
 
 ---
 
+### Phase 31 — Channel Delivery Receipts & User-Facing Send State
+
+**Purpose**
+
+Phase 30 made *where a turn came from* visible; this phase closes the companion gap it deliberately left open: whether a Telegram-originated turn's Assistant reply actually reached the user. The channel worker pipeline (Phase 26A/26B, [PD-015](../product/decisions/015-durable-channel-processing.md)/[PD-016](../product/decisions/016-telegram-interactive-workflows.md)) already tracks this durably in `ChannelOutboundDelivery.status`, with a bounded retry schedule and Phase 29's operator remediation for the terminal-failure case — none of it reaches the Web Assistant UI. This phase surfaces a small, privacy-safe, read-time-computed delivery-status projection, without changing any channel behavior, worker retry logic, or remediation path.
+
+**Repositories**
+
+- `pocket-mint-docs` (this note, plus [PD-021 — Channel Delivery Receipts & User-Facing Send State](../product/decisions/021-channel-delivery-receipts.md) and [Assistant Core Architecture §15.9](../architecture/assistant-core-architecture.md#159-channel-delivery-receipts-phase-31); `pocket-mint-be`'s own `docs/api/assistant-conversations.md` also gains the `sourceChannels`/`channel` (Phase 30, previously undocumented) and `deliveryStatus` (Phase 31) field descriptions).
+- `pocket-mint-be` — no migration; `conversation.service.ts`'s `getOwnedConversation` gains one additional bounded query (scoped to the page's TELEGRAM-channel turn ids) that aggregates the existing `ChannelOutboundDelivery` row per turn into a computed `turn.deliveryStatus`, plus new unit and DB-integration tests.
+- `pocket-mint-fe` — additive `deliveryStatus?` field on `AssistantTurn`, a subtle icon/label next to a Telegram-originated Assistant reply's role badge (delivering / sent / failed), new i18n keys, new Storybook stories.
+
+**Dependencies**
+
+- Phase 26A/26B (Telegram Interactive Workflows / Durable Channel Processing, PD-016/PD-015) — the `ChannelOutboundDelivery` lifecycle and retry/backoff schedule this phase reads from, unchanged.
+- Phase 29 (Safe Operator Remediation, PD-019) — remains the only remediation path for a terminally failed delivery; this phase adds no new one.
+- Phase 30 (Channel Source Attribution & Cross-Channel UX, PD-020) — this phase's field sits alongside `channel` on the same turn, using the same optionality and placement conventions.
+- Numbered independently of every other open phase; no collision was found.
+
+**Scope — Implemented**
+
+- `src/assistant/conversation.types.ts`: `AssistantDeliveryStatus = 'NOT_APPLICABLE' | 'PENDING' | 'PROCESSING' | 'DELIVERED' | 'FAILED'`.
+- `src/assistant/conversation.service.ts`: `DELIVERY_STATUS_MAP` (internal `ChannelDeliveryStatus` → safe `AssistantDeliveryStatus`); `getOwnedConversation` queries `channelInboundJob.findMany` (scoped to TELEGRAM-channel turn ids, selecting only `assistantTurnId` and its `SEND_MESSAGE`-kind delivery's `status`) and attaches `deliveryStatus` per turn — `'NOT_APPLICABLE'` for WEB, mapped status for TELEGRAM with a delivery row, absent for TELEGRAM with none (retention-purged or not yet created).
+- Frontend: `AssistantDeliveryStatus` type, optional `deliveryStatus?` on `AssistantTurn`; `AssistantMessage`/`AssistantMessageList`/`AssistantConversation` thread a `turnDeliveryStatusById` map the same way Phase 30's `turnChannelById` already does, rendering a small icon + `sr-only`/`title` label next to the `ASSISTANT` message's role badge only (never the `USER` message) when the turn is TELEGRAM-channel; `deliveryDelivering`/`deliverySent`/`deliveryFailed` i18n keys in both locales.
+- Backend unit test proving the five-value mapping (including `FAILED_RETRYABLE → PROCESSING`, not `FAILED`), HTTP-boundary passthrough/redaction test, and a DB-integration test exercising all five `ChannelDeliveryStatus` values plus the no-delivery-row and WEB cases.
+- Frontend Storybook stories for the delivering/delivered/failed states (i18n key parity already covered by the existing generic catalog test).
+
+**Scope — Explicitly not done**
+
+- No Telegram `externalChatId`/`externalUserId`/`externalSenderId` exposure, no `providerMessageId`/`destinationChatId`/reply markup exposure, no raw provider payload, through any DTO.
+- No stored `deliveryStatus` column or worker write-path change — purely a read-time projection over the existing `ChannelOutboundDelivery` row.
+- No user-triggered resend/retry button or action — Phase 29's `opsRemediate.ts requeue-outbound` remains the only remediation path.
+- No automatic replay or remediation of any kind.
+- No queue redesign, no admin/operator UI or endpoint, no new channel provider, no broad Assistant UI redesign.
+- No `deliveryStatus` on `listOwnedConversations` summaries — a per-turn concept, and the list endpoint does not return turns.
+
+**Risk**
+
+- **Low:** no schema or migration, no write path touched, and the read-path change is one additional bounded query reusing `conversation.service.ts`'s existing patterns (same cost class as Phase 30's `sourceChannels` groupBy). The only accepted limitation is the same class of bounded, documented historical-data gap Phase 30 already established — a TELEGRAM turn old enough that its `ChannelOutboundDelivery` row has been retention-purged reports no delivery status rather than a guessed one.
+
+---
+
 ## Cross Repository Order
 
 ```text
