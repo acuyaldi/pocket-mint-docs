@@ -188,6 +188,8 @@ Prefer `src/scripts/opsRemediate.ts requeue-outbound` (§8.2) over hand-typing t
 
 Prefer letting the worker's own inline cleanup run rather than deleting rows by hand; it already excludes anything active or leased.
 
+**User-facing consequence of retention (Phase 32, [PD-022](../product/decisions/022-channel-delivery-retention.md)):** once a `TELEGRAM` turn's `ChannelOutboundDelivery` row is purged by the cleanup above, `GET /conversations/:conversationId` reports that turn's `deliveryStatus` as `'UNKNOWN'` instead of its last real value — this is expected, not a bug, and it never shows as `'FAILED'`. Shortening `CHANNEL_RETENTION_DAYS` shortens how long a real delivery outcome (`DELIVERED`/`FAILED`) stays visible to the user before it reads as `UNKNOWN`; this is a real product trade-off to weigh before lowering it, not just a storage one.
+
 ### 8.2 Bounded remediation actions (Phase 29, [PD-019](../product/decisions/019-safe-operator-remediation.md))
 
 `src/scripts/opsRemediate.ts` turns three of the procedures below into a repeatable command instead of hand-typed SQL. **Every subcommand takes exactly one explicit row id, defaults to a dry-run print of the change, and requires `--apply` to actually write** — there is no "fix all" mode.
