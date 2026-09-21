@@ -1127,6 +1127,48 @@ Phase 30 made *where a turn came from* visible; this phase closes the companion 
 
 ---
 
+### Phase 32 — Channel Delivery Retention & Historical UX Semantics
+
+**Purpose**
+
+Phase 31 safely omitted `deliveryStatus` for a TELEGRAM turn whose delivery row had aged past retention — but that omission was indistinguishable, on the wire, from a pre-Phase-31 backend that has no delivery-status concept at all. This phase closes that ambiguity by making the historical-unknown case an explicit value instead of a missing key, so old conversation history has clearly-defined API semantics without looking broken or inconsistent, and without changing retention policy or adding new state.
+
+**Repositories**
+
+- `pocket-mint-docs` (this note, plus [PD-022 — Channel Delivery Retention & Historical UX Semantics](../product/decisions/022-channel-delivery-retention.md), [Assistant Core Architecture §15.10](../architecture/assistant-core-architecture.md#1510-channel-delivery-retention--historical-ux-semantics-phase-32), and a retention cross-reference added to the Telegram Deployment Runbook §8.1).
+- `pocket-mint-be` — no migration, no retention change; `AssistantDeliveryStatus` gains `'UNKNOWN'`, `conversation.service.ts` gains the exported pure `resolveDeliveryStatus(channel, mappedStatus)` (replacing the inline omit-on-no-row branch), `deliveryStatus` is now always present on the DTO; new unit and DB-integration tests (including an explicit purge-and-reread transition test).
+- `pocket-mint-fe` — `AssistantDeliveryStatus` type widened to include `'UNKNOWN'`; no new render branch — the existing default-safe switch in `AssistantMessage` already renders nothing for it, matching `NOT_APPLICABLE`.
+
+**Dependencies**
+
+- Phase 31 (Channel Delivery Receipts, PD-021) — this phase replaces its omit-on-no-row behavior with an explicit value; every other Phase 31 value and behavior is preserved unchanged.
+- Phase 26B (Durable Channel Processing, PD-015) — the `CHANNEL_RETENTION_DAYS` retention window this phase documents the user-facing consequence of, without changing it.
+- Phase 29 (Safe Operator Remediation, PD-019) — remains the only remediation path for an actual `FAILED` delivery; `UNKNOWN` is not a failure and triggers no remediation.
+- Phase 30 (Channel Source Attribution & Cross-Channel UX, PD-020) — `channel`/`sourceChannels` are untouched by this phase.
+- Numbered independently of every other open phase; no collision was found.
+
+**Scope — Implemented**
+
+- `src/assistant/conversation.types.ts`: `AssistantDeliveryStatus` widened to `'NOT_APPLICABLE' | 'PENDING' | 'PROCESSING' | 'DELIVERED' | 'FAILED' | 'UNKNOWN'`; doc comment updated to state the field is always present on a current backend.
+- `src/assistant/conversation.service.ts`: new exported `resolveDeliveryStatus(channel, mappedStatus)` — `NOT_APPLICABLE` for WEB, the Phase 31 mapped status for TELEGRAM with a retained row, `UNKNOWN` for TELEGRAM with none; `getOwnedConversation`'s turn-mapping step now calls it instead of inlining the omit-on-no-row branch.
+- `docs/api/assistant-conversations.md`: documents all six values and the always-present invariant.
+- Frontend: `AssistantDeliveryStatus` type widened; no component changes required — verified the existing `deliveryStateOf` switch's `default` arm already renders nothing for an unrecognized value.
+- Backend: new `resolveDeliveryStatus` unit tests (WEB/TELEGRAM-retained/TELEGRAM-unretained, closed-value coverage), an HTTP-boundary test updated to assert `'UNKNOWN'` passthrough instead of omission, and a new DB-integration test proving the live `DELIVERED → UNKNOWN` transition once a delivery row is deleted (simulating retention, without exercising or changing retention code itself).
+
+**Scope — Explicitly not done**
+
+- No retention policy redesign — `CHANNEL_RETENTION_DAYS`, `TERMINAL_RETENTION_MULTIPLIER`, and `src/channels/retention.ts` are unchanged.
+- No duplicate delivery-status snapshot stored anywhere — `deliveryStatus` remains a pure read-time computation, never persisted.
+- No Telegram external ID, provider message id, destination chat id, reply markup, or raw provider payload exposure, through any DTO.
+- No user-triggered resend/retry action, no automatic remediation, no queue redesign, no admin/operator UI, no new channel provider, no broad Assistant UI redesign.
+- No new visible icon/copy for `UNKNOWN` — it renders identically to the already-established "nothing" case, on purpose (see PD-022 for why an icon was considered and rejected).
+
+**Risk**
+
+- **Low:** no schema, no migration, no retention change, no write path touched. The only behavior change is that one previously-omitted field value becomes an explicit enum member — additive to every existing consumer that switches on known values, and the Phase 31 frontend already degrades safely on an unrecognized value by construction, so this phase required zero frontend logic changes to remain correct.
+
+---
+
 ## Cross Repository Order
 
 ```text
