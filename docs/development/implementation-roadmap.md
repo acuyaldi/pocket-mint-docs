@@ -1289,9 +1289,9 @@ A read-only inspection at the start of this phase found Assistant Core's natural
 
 ---
 
-## Release Baseline — Phases 27–35 (Assistant Reliability & Lifecycle)
+## Release Baseline — `dev` → `main` Promotion (Full Scope)
 
-Phases 27–35 are merged into `pocket-mint-be`/`pocket-mint-fe` `dev` and `pocket-mint-docs` `main`, and have been consolidated into a release-facing changelog ahead of Phase 36: [Assistant Release Baseline (Phases 27–35)](assistant-release-baseline-phase-27-35.md). That document groups the work by user/product outcome (reliable capture, conversation lifecycle, Web/Telegram continuity, operational safety, known limitations) and separates it from unrelated work also present in `dev` (Analytics v2, Smart Categorization, Merchant Mapping, and routine chores). It does not change scope, start Phase 36, or authorize promotion to `main` — see the accompanying promotion-readiness report for that.
+All work across `pocket-mint-be` `dev` and `pocket-mint-fe` `dev` not yet in `main` — Assistant Phases 27–35, Analytics v2, Smart Categorization, Merchant Mapping, and developer/platform work — is consolidated into one release-facing baseline ahead of promotion: [Release Baseline — dev → main Promotion](release-baseline-dev-to-main.md). That document groups the work by user/product outcome (Assistant capture, Analytics and reporting, smart categorization and merchant mapping, UI/navigation, performance/reliability/platform, known limitations), retains the original Phase 27–35 detail as a traceable appendix, and includes the proposed (not-yet-applied) public frontend changelog entry. It does not itself merge or deploy anything.
 
 ---
 
