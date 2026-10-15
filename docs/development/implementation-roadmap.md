@@ -1289,6 +1289,12 @@ A read-only inspection at the start of this phase found Assistant Core's natural
 
 ---
 
+## Release Baseline — `dev` → `main` Promotion (Full Scope)
+
+All work across `pocket-mint-be` `dev` and `pocket-mint-fe` `dev` not yet in `main` — Assistant Phases 27–35, Analytics v2, Smart Categorization, Merchant Mapping, and developer/platform work — is consolidated into one release-facing baseline ahead of promotion: [Release Baseline — dev → main Promotion](release-baseline-dev-to-main.md). That document groups the work by user/product outcome (Assistant capture, Analytics and reporting, smart categorization and merchant mapping, UI/navigation, performance/reliability/platform, known limitations), retains the original Phase 27–35 detail as a traceable appendix, and includes the proposed (not-yet-applied) public frontend changelog entry. It does not itself merge or deploy anything.
+
+---
+
 ## Cross Repository Order
 
 ```text
