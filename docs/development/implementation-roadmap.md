@@ -1208,6 +1208,47 @@ By Phase 32 the Assistant conversation lifecycle already spans archive, restore,
 
 ---
 
+### Phase 34 — Draft Correction Completion: Preview Data, Contract, and Test Coverage
+
+**Purpose**
+
+A read-only inspection at the start of this phase found that Assistant draft "correction" already exists end-to-end: `POST /drafts/:draftId/confirm` already accepts optional `amount`/`walletId`/`categoryId`/`description`/`date` overrides, already merges them with the pending draft and commits atomically, and already runs that merged write through the same ownership, expiry, status, advisory-lock, and idempotency protection as an unmodified confirm. The frontend already has complete edit UI for amount, wallet, category, date, and description, already holds edits locally until Confirm, and already hides Confirm/Cancel while editing. The real gaps were narrower: the override contract was undocumented; it had no automated backend or frontend coverage; and the three draft preview DTOs (initial preparation, clarification-continuation, recovery-state projection) exposed only a display-only `category`/`date` string, with no raw `categoryId` or unambiguous ISO date, so the existing edit UI could not faithfully preselect category/date — `app/(app)/assistant/page.tsx` was found seeding both as `undefined` with comments stating the data wasn't available. This phase closes those four gaps only; no new editing capability was added.
+
+**Repositories**
+
+- `pocket-mint-docs` (this note, plus [PD-024 — Draft Correction Completion](../product/decisions/024-draft-correction-completion.md) and [Assistant Core Architecture §15.12](../architecture/assistant-core-architecture.md#1512-draft-correction-completion--preview-data--confirm-time-overrides-phase-34)).
+- `pocket-mint-be` — `financial-draft.service.ts`'s shared `preview()` (used by both initial-preparation and clarification-continuation draft creation) and `clarification.service.ts`'s recovery-state projection both gain additive `categoryId`/`transactionDate` fields; `docs/api/assistant-conversations.md` gains a new "Confirm-time overrides (Phase 34)" section plus corrected preview-field descriptions; ~15 new integration tests in `test/assistant/financial-draft.integration.test.ts` covering per-field overrides, combinations, invalid wallet/category rejection, description-triggered re-inference, concurrent confirms, and overrides against expired/cancelled/committed drafts. No schema, migration, or new endpoint.
+- `pocket-mint-fe` — `src/types/assistant.ts`'s `AssistantDraftPreview`/`AssistantRecoveryDraftPreview` gain the same two fields; new `buildDraftEditOverrides()` helper in `src/features/assistant/utils/draftEdit.ts` replaces `page.tsx`'s buggy inline edit-seed logic; recovery mapper and URL-draft type guard updated to carry/require the new fields; new Storybook interaction test and unit tests covering edit-mode preselection and the full override-forwarding chain to the confirm call.
+
+**Dependencies**
+
+- Phase 17 (Assistant Request-Level Idempotency & Turn Recovery, PD-017) — confirm-time overrides are confirmed to merge only after idempotency-key handling, not around it.
+- Phase 33 (Conversation History Retention & Deletion Semantics, PD-023) — most recent prior Assistant-lifecycle phase; this phase's preview-field changes are confirmed to not interact with archive/restore/delete.
+- Numbered independently of every other open phase; no collision was found.
+
+**Scope — Implemented**
+
+- `financial-draft.service.ts`: `preview()` returns additive `categoryId`/`transactionDate` alongside existing `category`/`date` — one fix covers both the initial-draft and clarification-continuation DTOs, since both already route through this one function.
+- `clarification.service.ts`: recovery-state `pendingDraft.preview` gains `transactionDate`, computed via the existing `formatReportingDate`/`reportingConfig.timezone` helpers; the existing `date` field (found to be a naive UTC slice, off by one day in `Asia/Jakarta`) is left unchanged for backward compatibility.
+- `docs/api/assistant-conversations.md`: new "Confirm-time overrides (Phase 34)" section; corrected the stale "never expose Category ID" claim; updated preview/recovery-state field descriptions.
+- `test/assistant/financial-draft.integration.test.ts`: per-field override tests (`it.each` over amount/date/description), walletId override with balance assertions, categoryId override (no re-inference), all-five-fields-combined override, foreign/invalid walletId/categoryId rejection (404, zero mutation, draft stays `PENDING_CONFIRMATION`), description-triggered re-inference to the catch-all category, five-way concurrent confirm with differing override amounts (exactly one commit), overrides against expired/cancelled/already-committed drafts, and preview/recovery-state field-presence assertions.
+- Frontend: `AssistantDraftPreview`/`AssistantRecoveryDraftPreview` gain `categoryId`/`transactionDate`; new `buildDraftEditOverrides()` seeds edit mode from the raw fields instead of display strings; `isDraftPreview` type guard and the recovery mapper updated to match; new Storybook interaction test (`DraftSummaryCard.stories.tsx`'s `EditModePreselected`) asserting the date control preselects correctly and an unrelated field edit preserves the seeded category/date; new unit tests in `tests/assistant.test.ts` for the seed function, the recovery mapper, the type guard, and the full override-forwarding chain from `page.tsx` through to the confirm API call.
+
+**Scope — Explicitly not done**
+
+- No new draft CRUD endpoint, no `PATCH`/`PUT /drafts/:draftId`.
+- No persisted draft-edit state, no draft revision/audit-history model, no multi-draft conversation support, no background draft-expiry worker.
+- No editing of already-confirmed transactions, no bypass of confirmation, no change to duplicate-transaction behavior.
+- No new Telegram editing UI or financial logic, no financial-advice/insight features.
+- No full Add Transaction form built inside the Assistant surface.
+- No fix to the recovery-state projection's existing naive-UTC-slice `date` field — left unchanged for backward compatibility; `transactionDate` is the new, correct field.
+
+**Risk**
+
+- **Low:** no schema, no migration, no new endpoint, no change to the confirm route's existing ownership/expiry/status/advisory-lock/idempotency protections. The entire change is additive preview fields plus tests and documentation over already-correct, already-shipped override-merge behavior.
+
+---
+
 ## Cross Repository Order
 
 ```text
