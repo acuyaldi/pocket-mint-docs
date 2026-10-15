@@ -1249,6 +1249,46 @@ A read-only inspection at the start of this phase found that Assistant draft "co
 
 ---
 
+### Phase 35 — Capture Grounding & First-Pass Reliability
+
+**Purpose**
+
+A read-only inspection at the start of this phase found Assistant Core's natural-language transaction capture already correct end-to-end — draft creation, clarification, and confirmation all already work — but found three narrow, unrelated gaps in how often a message reaches a correct first-pass draft: (1) the deterministic Gemini system instruction had no reporting-timezone current-date anchor, so relative Indonesian phrases ("kemarin", "tadi", "hari ini") had no fixed calendar reference inside the model's own interpretation, even though the backend's own omitted-date default (today, reporting timezone) was already correct; (2) the deterministic single-amount-token Rupiah recovery fallback supported `rb`/`ribu`/`jt`/`juta` but explicitly declined the common casual `k` suffix (`25k`, `450k`), despite using the identical thousands-multiplier logic already used for `rb`/`ribu`; (3) no structured event distinguished direct vs. clarification-resolved draft creation, why a clarification was required, whether it was abandoned, or whether a confirm carried an edit — a product-quality measurement gap the existing `assistant.message.*`/`assistant.draft.*`/`assistant.clarification.*` ops events (Phase 28, PD-018) were never designed to answer. This phase closes those three gaps only; it is not a financial-advice, insight, recommendation, budgeting, proactive-assistant, or channel-expansion phase, and it changes nothing about confirmation, idempotency, draft-correction, or transaction lifecycle semantics.
+
+**Repositories**
+
+- `pocket-mint-docs` (this note, plus [PD-025 — Capture Grounding & First-Pass Reliability](../product/decisions/025-capture-grounding-first-pass-reliability.md) and [Assistant Core Architecture §15.13](../architecture/assistant-core-architecture.md#1513-capture-grounding--first-pass-reliability-phase-35)).
+- `pocket-mint-be` — `provider-instruction.ts`'s `buildAssistantSystemInstruction` gains a deterministic reporting-timezone date-anchor rule line (reusing `formatReportingDate`/`reportingConfig.timezone`, with an injectable `now` for deterministic tests); `rupiah-amount-recovery.ts`'s suffix grammar gains `k`/`K` alongside the existing `rb`/`ribu`/`jt`/`juta`; `assistant.controller.ts` gains six new bounded `assistant.capture.*` events (extending, not widening, `AssistantLogEvent`); `clarification.service.ts#cancel` additively returns the cancelled clarification's `entityType` so the cancellation event (and API response) can carry a bounded kind label; `docs/api/assistant-conversations.md`, `docs/observability-runbook.md`, and `.claude/skills/assistant-core.skill.md` §13 updated accordingly. No schema, migration, or new endpoint.
+- `pocket-mint-fe` — none. No documented event/API contract required a frontend change.
+
+**Dependencies**
+
+- Phase 28 (Assistant Operations Visibility, PD-018) — this phase's `assistant.capture.*` events extend that taxonomy and reuse its closed `AssistantLogEvent` field set and redaction guarantees; no existing event is removed, renamed, or widened.
+- Phase 34 (Draft Correction Completion, PD-024) — most recent prior Assistant-lifecycle phase; confirm-time overrides are confirmed unchanged, `draft_confirmed`'s `overridesUsed` only observes whether an override was present.
+- Numbered independently of every other open phase; no collision was found.
+
+**Scope — Implemented**
+
+- `provider-instruction.ts`: `buildAssistantSystemInstruction(catalog, locale?, now = new Date())` appends one rule anchoring the current reporting-timezone calendar date (ISO `YYYY-MM-DD`), explicitly scoped to relative-date grounding only — never financial advice, budgeting, or other reasoning; the backend's own omitted-date default is unchanged.
+- `rupiah-amount-recovery.ts`: `k`/`K` accepted as a thousands-multiplier suffix (`25k`, `450k`, `1.5k`, `1,5k`), reusing the existing multiplier branch; the existing one-unambiguous-token safeguard, and every existing declined case (`350km`, `0k`, `-350k`, multi-amount messages, `setengah juta`), are unchanged.
+- `assistant.controller.ts`: `assistant.capture.draft_created` (`captureSource: 'direct' | 'clarification_resolved'`), `assistant.capture.clarification_required` (`clarificationKind`), `assistant.capture.clarification_cancelled` (`clarificationKind`), `assistant.capture.draft_confirmed` (`overridesUsed`, new-confirm only), `assistant.capture.draft_cancelled` (fresh cancel only), `assistant.capture.draft_expired` (fires only when the existing lazy expiry check in `confirm()`/`cancel()` actually detects expiry) — all fired at the same controller boundary as the existing ops events, never duplicating their content.
+- `clarification.service.ts`: `cancel()` additively returns `{ entityType }` instead of `void`, threaded through `application.service.ts#cancelClarification`'s response `data` and into the new cancellation event.
+- Tests: unit coverage for the date anchor (presence, reporting-timezone correctness, determinism under a frozen clock, unchanged catalog/schema behavior), the `k` grammar (accepted/rejected cases, existing-suffix regression), and the capture events (fired at the right lifecycle point, bounded fields only, no raw content) across `test/assistant/provider-runtime.test.ts`, `test/assistant/rupiah-amount-recovery.test.ts`, and `test/assistant/application.service.test.ts`.
+
+**Scope — Explicitly not done**
+
+- No transfer support, no fuzzy or substring wallet/merchant matching, no merchant auto-learning from confirmed transactions.
+- No new clarification type for amount or date, no clarification UI redesign or copy rewrite.
+- No change to confirmation, idempotency, draft-correction, or transaction lifecycle semantics — draft confirmation remains mandatory and no transaction is created until confirm.
+- No frontend changes, no new provider, no queue redesign, no admin UI, no analytics dashboard.
+- No raw capture data (message text, amounts, wallet/category IDs, merchant names, provider payloads, Telegram IDs, tokens, descriptions, transaction identifiers) in any new log line.
+
+**Risk**
+
+- **Low:** no schema, no migration, no new endpoint, no change to any existing confirmation/idempotency/clarification protection. The date anchor and `k` grammar are narrow, additive, deterministic fallbacks with existing safeguards unchanged; the new events reuse an already-closed, already-redacted logging type.
+
+---
+
 ## Cross Repository Order
 
 ```text
