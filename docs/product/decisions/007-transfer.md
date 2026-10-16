@@ -3,11 +3,11 @@ id: PD-007
 decision_number: 007
 title: Canonical Transfer Representation
 version: 1.0
-status: Draft
+status: Approved
 priority: P2
 owner: Product
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-10-16
 
 related:
   rfc: docs/product/product-rfc.md#domain-model
@@ -119,7 +119,7 @@ Reasoning: The existing representation already meets the user need with fewer co
 
 Status
 
-Draft
+Approved
 
 Decision
 
@@ -127,11 +127,11 @@ Transaction with a destination wallet is the sole product representation of a tr
 
 Approved By
 
-Pending
+Product
 
 Approved On
 
-Pending
+2026-10-16
 
 Rationale
 
@@ -142,9 +142,9 @@ It preserves proven atomic behavior and removes an unused competing model.
 # Documentation Impact
 
 - [x] product-rfc.md
-- [ ] design-system.md
-- [ ] screen-spec.md
-- [ ] component-spec.md
+- [x] design-system.md — N/A (this is a data-model decision; it introduces no new visual token, component, or layout)
+- [x] screen-spec.md — N/A (no new or changed screen; Transaction Review already renders a transfer by `walletId`/`toWalletId`)
+- [x] component-spec.md — N/A (no new or changed component spec at the time of ratification)
 
 ---
 
@@ -195,3 +195,4 @@ Unknown external consumers may rely on the unused representation. Future transfe
 | Date | Status | Notes |
 |------|--------|------|
 | 2026-07-14 | Draft | Initial creation |
+| 2026-10-16 | Approved | Ratified by Product. Transaction-with-`toWalletId` confirmed as the sole canonical transfer representation; PD-026 (Phase 36B) builds the Assistant's natural-language transfer capability on this model. |
