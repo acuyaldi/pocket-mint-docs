@@ -1289,6 +1289,51 @@ A read-only inspection at the start of this phase found Assistant Core's natural
 
 ---
 
+### Phase 36 — Natural-Language Transfer Capture (Assistant TRANSFER)
+
+**Purpose**
+
+PD-007 (ratified alongside this phase) settles the canonical transfer data model — one `Transaction` row, `walletId` source, `toWalletId` destination, no separate transfer identity — and the transaction domain (`transactionService.createTransaction()`, `transactionBalance.ts`) already fully implemented it before this phase. The gap this phase closes is entirely in the Assistant layer: `transaction.create` accepted only `INCOME`/`EXPENSE`; `AssistantFinancialDraft` had no destination-wallet column and a `NOT NULL` category column that a transfer can never satisfy; the Persistent Clarification Engine had no way to resolve two independent wallet references in one turn; and the tool description actively told the model that "transfer untuk membayar" phrasing means `EXPENSE`. This phase (PD-026) opens Assistant-driven internal transfer capture on top of the existing PD-007 model and `EXPLICIT`/`DRAFT_AND_CONFIRM` confirmation policy — it does not change the transfer data model, add a new endpoint, implement `STEP_UP`, or touch Telegram's transfer-confirmation behavior beyond routing it to the existing fixed web-handoff fallback.
+
+**Repositories**
+
+- `pocket-mint-docs` — PD-007 ratified (Status: Approved, Approved By: Product, Approved On: 2026-10-16; remaining visual-document checklist items marked N/A); [PD-026 — Assistant Transfer Capability](../product/decisions/026-assistant-transfer-capability.md) added; [Assistant Core Architecture §15.14](../architecture/assistant-core-architecture.md#1514-assistant-transfer-capability-phase-36b) added, and §12's risk-tier table corrected (`transaction.create` was listed Medium while its actual tool registration is `riskLevel: HIGH` — a pre-existing documentation/code mismatch this phase found and fixed, not something this phase's TRANSFER work introduced).
+- `pocket-mint-be` — `tools.ts` (`TRANSFER` in the `type` enum, `toWalletReference` argument, rewritten description removing the transfer→EXPENSE mapping), `transaction-type-recovery.ts` (same mapping removed from the deterministic fallback), `clarification.types.ts`/`clarification.service.ts` (`CanonicalContext.type` widened, additive `toWallet`/`pendingWalletRole`/`toWalletReference` fields, `isValidTrustedContext` widened), `application.service.ts` (independent source/destination resolution, source-first sequential clarification with a child destination clarification, `finalizeTransferDraft`), `financial-draft.service.ts` (`toWalletId` in `DraftConfirmOverride`, transfer-aware `prepare()`/`confirm()` validation — source type, destination ownership, same-wallet rejection, category prohibition — reusing `transactionService`'s `TRANSFER_SOURCE_TYPES`), `financial-draft.ts` (transfer-aware preview text), `assistant.controller.ts` (`toWalletId` added to the confirm-override allowlist), `channels/interaction.service.ts` (`renderApplicationResult` routes a TRANSFER draft to the existing fixed web-handoff instead of building a confirm/cancel keyboard), Prisma migration `20261015160518_assistant_transfer_draft_fields` (additive nullable `toWalletId` + nullable `categoryId` on `AssistantFinancialDraft`).
+- `pocket-mint-fe` — `src/types/assistant.ts` (`TRANSFER` + destination-wallet fields on `AssistantDraftPreview`/`AssistantRecoveryDraftPreview`), `assistantApi.ts` (`toWalletId` on `DraftConfirmOverrides`), `draftParam.ts`/`draftEdit.ts`/`recovery.ts` (widened safely, INCOME/EXPENSE shape unchanged), `DraftSummaryCard.tsx` (dedicated TRANSFER branch — "Dari"/"Ke" wallet rows, no category control, edit mode reusing the existing `transfer-account-picker` pure logic), Storybook stories, and an Assistant TRANSFER E2E spec mirroring the existing INCOME/EXPENSE one.
+
+**Dependencies**
+
+- [PD-007 — Canonical Transfer Representation](../product/decisions/007-transfer.md) — ratified by this phase; this phase's entire Assistant capability is built on its already-implemented data model.
+- [PD-026 — Assistant Transfer Capability](../product/decisions/026-assistant-transfer-capability.md) — this phase's own decision record for the Assistant-layer UX, confirmation, clarification, and Telegram-exclusion choices.
+- [PD-016 — Telegram Interactive Workflows](../product/decisions/016-telegram-interactive-workflows.md) — this phase reuses, and does not alter, the fixed web-handoff fallback and the finding that `STEP_UP` has zero implementing tools.
+- Phase 35 (Capture Grounding & First-Pass Reliability) — most recent prior Assistant-capture phase; its non-goals explicitly deferred transfer support to this phase.
+- Numbered independently of every other open phase; no collision was found.
+
+**Scope — Implemented**
+
+- `transaction.create` tool contract: `TRANSFER` type, `toWalletReference` argument, category forbidden for `TRANSFER`, rewritten description/enum text removing the transfer→EXPENSE language mapping.
+- `AssistantFinancialDraft`: additive nullable `toWalletId`, nullable `categoryId` (migration verified by a clean `prisma migrate deploy` replay from empty and `prisma validate`; existing INCOME/EXPENSE rows unaffected).
+- Independent source/destination wallet resolution; source-first sequential clarification with a child destination clarification when both are ambiguous; an additive `pendingWalletRole` discriminator (not a new `EntityType`) so neither selection ever overwrites the other slot; same-wallet and transfer-source-type rejection at both draft-prepare and confirm time.
+- Confirm-time `toWalletId` override, re-validated (ownership, source type, same-wallet, category prohibition) inside the existing atomic confirm transaction; `transactionService.createTransaction()` reused unchanged for the actual balance effect.
+- Telegram: a TRANSFER draft's confirmation step renders the existing fixed web-handoff message, never an inline confirm/cancel keyboard.
+- Frontend: dedicated TRANSFER draft review/edit UI, Storybook interaction coverage, and an E2E spec (written, not executed in the implementing environment — requires a live backend and a real Supabase E2E test user).
+- Tests: backend unit + integration coverage (unambiguous preparation; missing/ambiguous/foreign/wrong-type wallets; sequential both-ambiguous chaining with no slot collision; same-wallet rejection at prepare and confirm; category-for-transfer rejection; insufficient funds; confirm-time source/destination overrides; type-change rejection; concurrent-confirm atomicity; idempotency replay and cross-draft conflict; Telegram web-handoff rendering) — full existing integration suite (22 files, 254 tests) and unit suite re-run green, confirming no INCOME/EXPENSE regression.
+
+**Scope — Explicitly not done**
+
+- No change to the canonical transfer data model (PD-007's scope).
+- No external bank transfer, payment rail, cross-user transfer, currency conversion, or recurring/scheduled/split transfer.
+- No new transaction API endpoint, no new balance algorithm, no `PATCH`/`PUT` draft endpoint, no confirmed-transfer editing through the Assistant.
+- No `STEP_UP` implementation.
+- No Telegram-native transfer confirm/cancel keyboard or transfer edit UI.
+- No financial advice, recommendation, or proactive messaging.
+
+**Risk**
+
+- **Medium:** a schema migration is included (additive and backward-compatible — verified by a from-empty replay), and the confirm-time override validation gains transfer-specific branches inside an already-safety-critical function. No existing confirmation, idempotency, ownership, expiry, or concurrency guarantee was weakened; the full existing automated suite (backend unit, backend integration, frontend unit, frontend Storybook a11y/interaction) passed unchanged after this phase's additions.
+
+---
+
 ## Release Baseline — `dev` → `main` Promotion (Full Scope)
 
 All work across `pocket-mint-be` `dev` and `pocket-mint-fe` `dev` not yet in `main` — Assistant Phases 27–35, Analytics v2, Smart Categorization, Merchant Mapping, and developer/platform work — is consolidated into one release-facing baseline ahead of promotion: [Release Baseline — dev → main Promotion](release-baseline-dev-to-main.md). That document groups the work by user/product outcome (Assistant capture, Analytics and reporting, smart categorization and merchant mapping, UI/navigation, performance/reliability/platform, known limitations), retains the original Phase 27–35 detail as a traceable appendix, and includes the proposed (not-yet-applied) public frontend changelog entry. It does not itself merge or deploy anything.
