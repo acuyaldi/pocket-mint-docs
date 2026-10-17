@@ -1334,6 +1334,51 @@ PD-007 (ratified alongside this phase) settles the canonical transfer data model
 
 ---
 
+### Phase 37 — Wallet Alias Management & Resolution Reliability
+
+**Purpose**
+
+The production Wallet Resolver (§15.1) already derives exact-match aliases from a wallet's canonical name — "BCA Debit" yields `bca`/`debit` — but a User cannot teach it a personal nickname that isn't literally a word already in the wallet's name. This phase ([PD-027](../product/decisions/027-wallet-alias-management.md)) adds an explicit, User-managed `WalletAlias` namespace fed into the same resolver as additional exact candidates, closing that first-pass-reliability gap without adding a new resolver, a new entity type, or any fuzzy/substring/edit-distance matching. It does not change confirmation, idempotency, the clarification lifecycle, transfer balance logic, or transaction lifecycle semantics.
+
+**Repositories**
+
+- `pocket-mint-docs` — [PD-027 — Wallet Alias Management & Resolution Reliability](../product/decisions/027-wallet-alias-management.md) added; [Assistant Core Architecture §15.1](../architecture/assistant-core-architecture.md#151-deterministic-entity-resolution) updated in place (explicit aliases merged into the resolver's candidate alias list) and [§15.15](../architecture/assistant-core-architecture.md#1515-explicit-wallet-aliases-phase-37) added (namespace guarantee, concurrency, resolution tier, API); [Wallet Alias API Contract](wallet-alias-api-contract.md) added; [Glossary — Wallet Alias](../product/glossary.md#wallet-alias) added.
+- `pocket-mint-be` — Prisma migration `20261016042202_add_wallet_alias` (additive `WalletAlias` model, `@@unique([userId, aliasNormalized])`, cascading FKs to `Wallet` and `User`); `walletAlias.service.ts`/`.types.ts`/`.errors.ts` (create/delete, the namespace collision checks, the user-scoped advisory lock); `walletNamespace.lock.ts` (the shared `pg_advisory_xact_lock` helper); `wallet.service.ts` (`createWallet`/`updateWallet` now reject a canonical name colliding with an existing alias, opening the same lock only when a name is actually being set/changed); `wallet-query.service.ts` (`listWallets` additively includes each wallet's aliases); `wallet-resolver.ts` (`combineAliasSources` — merges stored aliases with the existing name-derived tokens before candidate construction); `walletAlias.controller.ts`/`walletRoutes.ts` (`POST`/`DELETE /wallets/:walletId/aliases[/:aliasId]`); `account.controller.ts` (`aliases` passed through on the wallet read DTO).
+- `pocket-mint-fe` — `src/types/wallet.ts` (`WalletAlias`, additive `aliases` on `Wallet`); `useWallets.ts` (`useCreateWalletAlias`/`useDeleteWalletAlias`); `WalletAliasManager.tsx` (presentational "also known as" chip list + bounded add input, embedded in `EditWalletModal.tsx`, mutations owned by the modal); compact alias display on the wallets list page; Storybook interaction/a11y coverage; an Assistant-capture E2E spec (written, not executed in the implementing environment — requires a live backend and a real Supabase E2E test user, same limitation already recorded for Phase 36's transfer E2E spec).
+
+**Dependencies**
+
+- [Assistant Core Architecture §15.1](../architecture/assistant-core-architecture.md#151-deterministic-entity-resolution) — the production Wallet Resolver, normalization policy, and scoring table this phase extends rather than replaces.
+- [PD-011 — Merchant Mapping](../product/decisions/011-merchant-mapping.md) (and its `(userId, normalizedMerchant)` unique constraint) — the structural template this phase's `(userId, aliasNormalized)` namespace follows.
+- Numbered independently of every other open phase; no collision was found.
+
+**Scope — Implemented**
+
+- `WalletAlias` model: `id`, `walletId`, `userId`, `aliasDisplay`, `aliasNormalized`, `createdAt`; cascading delete from both `Wallet` and `User`; `@@unique([userId, aliasNormalized])` — per-user, never global (migration verified by a clean `prisma migrate deploy` replay from empty, `prisma validate`, and a direct-SQL cascade/uniqueness check; existing wallet rows unaffected).
+- Reused the resolver's existing `normalizeEntityReference` for `aliasNormalized` — no second normalizer; an alias that normalizes to empty, or exceeds the existing per-alias byte budget, is rejected before any write.
+- Namespace collision enforcement, both directions: alias create rejects a collision with another of the user's aliases, any of their canonical wallet names, or the target wallet's own canonical name; wallet create/rename rejects a collision with an existing alias. All typed 409 conflicts — no silent overwrite, rename, or selection.
+- User-scoped `pg_advisory_xact_lock` (distinctly salted from the existing per-draft lock) opened only around the check-then-write window for alias create and a name-changing wallet create/rename, so a concurrent race between the two write paths cannot bypass the cross-table collision check; the `@@unique` constraint remains the final guarantee.
+- Resolver change: a wallet's explicit aliases are merged into its existing candidate alias list (explicit ordered first, so the existing 16-per-candidate cap never drops an explicit alias ahead of a derived token), matched at the existing `alias_exact` tier (950) — no new score tier, no fuzzy/substring/edit-distance matching. Transfer source/destination resolution (§15.14) gained alias support automatically, with no code change to the transfer path.
+- `POST`/`DELETE /wallets/:walletId/aliases[/:aliasId]` — no update endpoint; ownership re-verified per request; cross-user access indistinguishable from `404 NOT_FOUND`, matching the repository's existing convention.
+- Frontend: alias management embedded in the existing wallet-edit modal (no new route), compact non-distracting alias display on the wallets list, Storybook interaction + a11y coverage, an Assistant-capture E2E spec proving an alias created through the wallet UI resolves without clarification (written; execution requires live E2E credentials this environment doesn't have).
+- Tests: backend unit + integration coverage (alias create/delete; empty/invalid-normalization rejection; per-user alias uniqueness; alias-vs-canonical-name collision both directions; cross-user isolation and not-found; concurrent alias/wallet-name race; resolver exact match through a stored alias; existing derived-token and ambiguity behavior unchanged; alias resolution for both transfer source and destination; wallet-deletion cascade) — full existing backend unit suite (125 files / 1620 tests) and integration suite (23 files / 262 tests) re-run green. Frontend: full existing unit suite (59 files / 786 tests), Storybook build, and the Storybook a11y/interaction project (32 files / 244 tests) re-run green.
+
+**Scope — Explicitly not done**
+
+- No fuzzy, substring, edit-distance, or semantic wallet matching, for aliases or otherwise.
+- No automatic alias creation from an Assistant message or any provider/LLM output; no cross-user alias discovery or sharing; no silent selection on ambiguity.
+- No alias history/audit system; no dedicated alias-management route in the frontend; no Assistant-owned alias model.
+- No change to confirmation, idempotency, the clarification lifecycle, transfer balance logic, or transaction lifecycle semantics.
+- No financial advice, recommendation, or proactive messaging.
+- No new channel, queue, or Telegram-specific alias logic.
+- No retroactive cleanup migration for pre-existing duplicate canonical wallet names.
+
+**Risk**
+
+- **Low:** additive schema change only (new table, cascading FKs, one new unique index — verified by a from-empty migration replay); the one behavioral change to an existing write path (`wallet.service.ts`'s create/rename) is narrowly scoped to the case where a canonical name is actually being set or changed, and reuses an existing lock mechanism rather than introducing a new one. No existing confirmation, idempotency, ownership, expiry, or concurrency guarantee was weakened; the full existing automated suite (backend unit, backend integration, frontend unit, frontend Storybook a11y/interaction) passed unchanged after this phase's additions. The one unexecuted item (the new E2E spec) mirrors an identical, already-accepted limitation recorded for Phase 36.
+
+---
+
 ## Release Baseline — `dev` → `main` Promotion (Full Scope)
 
 All work across `pocket-mint-be` `dev` and `pocket-mint-fe` `dev` not yet in `main` — Assistant Phases 27–35, Analytics v2, Smart Categorization, Merchant Mapping, and developer/platform work — is consolidated into one release-facing baseline ahead of promotion: [Release Baseline — dev → main Promotion](release-baseline-dev-to-main.md). That document groups the work by user/product outcome (Assistant capture, Analytics and reporting, smart categorization and merchant mapping, UI/navigation, performance/reliability/platform, known limitations), retains the original Phase 27–35 detail as a traceable appendix, and includes the proposed (not-yet-applied) public frontend changelog entry. It does not itself merge or deploy anything.
