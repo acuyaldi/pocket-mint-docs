@@ -156,6 +156,26 @@ Wallets, Dashboard, Transactions, Financial Summary
 **Examples**
 Recording an Expense of 50,000 from a Cash wallet reduces that wallet's Wallet Balance by exactly 50,000.
 
+## Wallet Alias
+
+**Definition**
+An explicit, User-created nickname for a wallet (e.g. "Rekening Utama" for a wallet canonically named "BCA Debit"). Assistant transaction capture accepts a Wallet Alias as an exact match alongside the wallet's canonical name and its existing name-derived tokens — never a fuzzy, substring, or approximate match. A Wallet Alias is unique per User (never globally, never shared across Users) and cannot collide with that User's own canonical wallet names or other aliases.
+
+**Why it exists**
+PD-027 (Phase 37). The existing name-derived tokens (e.g. "BCA Debit" yields "bca"/"debit") only ever come from the wallet's own name — a User could not teach capture a personal shorthand like "dompet jajan" without renaming the wallet itself, which changes the display name everywhere else in the product. A Wallet Alias is a separate, explicit nickname that leaves the canonical name untouched.
+
+**Related Terms**
+Asset Wallet, Debt Wallet, Wallet Balance
+
+**Not To Be Confused With**
+A wallet's canonical name, which is a single required field on the wallet itself, not a separate record, and is never deleted-and-recreated the way an alias is edited. Also not a fuzzy or "similar name" match — resolution is always exact.
+
+**Used In**
+Wallets (wallet-edit modal, compact list display), Assistant transaction capture (wallet resolution for income/expense and both sides of a transfer)
+
+**Examples**
+A wallet canonically named "BCA Debit" with the Wallet Alias "Rekening Utama" resolves an Assistant message referencing either "BCA Debit" or "Rekening Utama" to the same wallet, without asking the User to clarify.
+
 ## Available Credit
 
 **Definition**
